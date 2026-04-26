@@ -197,6 +197,45 @@ label {
   margin-bottom: 14px;
 }
 
+.pickerSection {
+  display: grid;
+  gap: 10px;
+}
+
+.sectionTitle {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.previewBlock {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcfc;
+  overflow: hidden;
+}
+
+.previewHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.scriptPreview {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  background: #f1f4f5;
+  color: var(--ink);
+  white-space: pre;
+}
+
 .nodeButton {
   width: 100%;
   text-align: left;
@@ -214,6 +253,19 @@ label {
   color: var(--muted);
   font-size: 12px;
   margin-top: 3px;
+}
+
+.itemFieldGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.helpText {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .list {
@@ -265,5 +317,9 @@ label {
 
   .row {
     flex-wrap: wrap;
+  }
+
+  .itemFieldGrid {
+    grid-template-columns: 1fr;
   }
 }

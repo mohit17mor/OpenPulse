@@ -86,9 +86,13 @@ function updateConditionValueVisibility() {
 function renderSelection() {
   $("scriptOutputPicker").classList.toggle("hidden", state.source !== "script");
   if (state.source === "script") {
-    $("selectionPreview").textContent = state.scriptSelection
-      ? JSON.stringify(state.scriptSelection, null, 2)
-      : "Run a script preview and select an output node.";
+    if (state.scriptPreview?.ok) {
+      $("selectionPreview").textContent = formatScriptOutputPreview();
+    } else if (state.scriptPreview && !state.scriptPreview.ok) {
+      $("selectionPreview").textContent = state.scriptPreview.execution?.stderr || state.scriptPreview.error || "Script preview failed.";
+    } else {
+      $("selectionPreview").textContent = "Run a script preview to see the full output here.";
+    }
     renderScriptOutputPicker();
     return;
   }
@@ -112,13 +116,26 @@ function renderScriptOutputPicker() {
     `;
     return;
   }
-  container.innerHTML = state.scriptPreview.nodes.map((node, index) => renderOutputNode(node, index)).join("");
+  container.innerHTML = `
+    <div class="pickerSection">
+      <div class="sectionTitle">Select what to monitor from the preview above</div>
+      ${state.scriptPreview.nodes.map((node, index) => renderOutputNode(node, index)).join("")}
+    </div>
+  `;
   container.querySelectorAll("[data-node-index]").forEach((button) => {
     button.addEventListener("click", () => selectScriptNode(Number(button.dataset.nodeIndex)));
   });
   container.querySelectorAll("[data-item-field]").forEach((select) => {
     select.addEventListener("change", updateScriptItemSelectionFromFields);
   });
+}
+
+function formatScriptOutputPreview() {
+  if (!state.scriptPreview) return "";
+  if (state.scriptPreview.outputType === "json") {
+    return JSON.stringify(state.scriptPreview.parsed, null, 2);
+  }
+  return state.scriptPreview.stdout || "";
 }
 
 function renderOutputNode(node, index) {
@@ -133,18 +150,30 @@ function renderOutputNode(node, index) {
       .join("");
     const fieldSelectors = selected
       ? `
-        <div class="row">
-          <label>ID field<select data-item-field="idField">${optionHtml(state.scriptSelection?.idField || "")}</select></label>
-          <label>Display field<select data-item-field="displayField"><option value=""${state.scriptSelection?.displayField ? "" : " selected"}>ID</option>${optionHtml(state.scriptSelection?.displayField || "")}</select></label>
-          <label>URL field<select data-item-field="urlField"><option value=""${state.scriptSelection?.urlField ? "" : " selected"}>None</option>${optionHtml(state.scriptSelection?.urlField || "")}</select></label>
+        <div class="itemFieldGrid">
+          <label>
+            Unique item field
+            <select data-item-field="idField">${optionHtml(state.scriptSelection?.idField || "")}</select>
+            <span class="helpText">Used to decide whether an item is new. For Jira, use key.</span>
+          </label>
+          <label>
+            Shown in logs
+            <select data-item-field="displayField"><option value=""${state.scriptSelection?.displayField ? "" : " selected"}>Use unique field</option>${optionHtml(state.scriptSelection?.displayField || "")}</select>
+            <span class="helpText">Human-readable label for matched logs. For Jira, summary is usually best.</span>
+          </label>
+          <label>
+            Link field
+            <select data-item-field="urlField"><option value=""${state.scriptSelection?.urlField ? "" : " selected"}>None</option>${optionHtml(state.scriptSelection?.urlField || "")}</select>
+            <span class="helpText">Optional URL to include in event details when the script provides one.</span>
+          </label>
         </div>
       `
       : "";
     return `
       <div>
         <button type="button" class="nodeButton ${selected ? "selected" : ""}" data-node-index="${index}">
-          Items: ${escapeHtml(node.path)}[]
-          <div class="nodeMeta">${node.length} item(s), fields: ${escapeHtml(fields.join(", ") || "none")}</div>
+          ${escapeHtml(arrayNodeLabel(node))}
+          <div class="nodeMeta">Path: ${escapeHtml(node.path)} · ${node.length} item(s), fields: ${escapeHtml(fields.join(", ") || "none")}</div>
         </button>
         ${fieldSelectors}
       </div>
@@ -158,20 +187,30 @@ function renderOutputNode(node, index) {
   `;
 }
 
+function arrayNodeLabel(node) {
+  if (node.path === "$") {
+    return `Monitor the top-level list`;
+  }
+  return `Monitor the list field "${node.path}"`;
+}
+
 function selectScriptNode(index) {
   const node = state.scriptPreview.nodes[index];
   if (node.kind === "array") {
-    const idField = (node.idFieldOptions || [])[0] || "";
+    const fields = node.idFieldOptions || [];
+    const idField = preferredField(fields, ["key", "id", "guid", "uuid"]) || fields[0] || "";
+    const displayField = preferredField(fields, ["summary", "title", "name", "label", "key"]) || "";
+    const urlField = preferredField(fields, ["url", "link", "href", "webUrl", "htmlUrl"]) || "";
     state.scriptSelection = {
       nodeIndex: index,
       mode: "items",
       outputType: "json",
       arrayPath: node.path,
       idField,
-      displayField: "",
-      urlField: ""
+      displayField,
+      urlField
     };
-    $("monitorName").value = `new items in ${node.path}`;
+    $("monitorName").value = node.path === "$" ? "new script items" : `new items in ${node.path}`;
   } else {
     state.scriptSelection = {
       nodeIndex: index,
@@ -185,6 +224,15 @@ function selectScriptNode(index) {
   }
   updateConditionOptions();
   renderSelection();
+}
+
+function preferredField(fields, candidates) {
+  const lowerToOriginal = new Map(fields.map((field) => [field.toLowerCase(), field]));
+  for (const candidate of candidates) {
+    const exact = lowerToOriginal.get(candidate.toLowerCase());
+    if (exact) return exact;
+  }
+  return "";
 }
 
 function updateScriptItemSelectionFromFields() {
