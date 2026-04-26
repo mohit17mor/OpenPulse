@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenPulse Fixture Product</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #f6f7f8;
+        color: #172026;
+      }
+      header,
+      footer {
+        padding: 18px 36px;
+        background: #172026;
+        color: white;
+      }
+      main {
+        max-width: 920px;
+        margin: 40px auto;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+      }
+      .photo {
+        min-height: 360px;
+        background: linear-gradient(135deg, #dce8e6, #f5d6a3);
+        border-radius: 10px;
+      }
+      .details {
+        background: white;
+        border: 1px solid #dbe1e5;
+        border-radius: 10px;
+        padding: 24px;
+      }
+      .price {
+        font-size: 42px;
+        font-weight: 800;
+        margin: 18px 0;
+      }
+      .status {
+        color: #136f63;
+        font-weight: 700;
+      }
+      .meta {
+        color: #63717b;
+      }
+    </style>
+  </head>
+  <body>
+    <header>OpenPulse Fixture Store</header>
+    <main>
+      <div class="photo" aria-label="Product image placeholder"></div>
+      <section class="details">
+        <p class="meta">Running shoe</p>
+        <h1>Demo Runner Pro</h1>
+        <p id="price" class="price">$129.00</p>
+        <p id="stock" class="status">In stock</p>
+        <p>Delivery by Tuesday</p>
+        <button>Add to cart</button>
+      </section>
+    </main>
+    <footer>Footer content should not dominate candidate selection.</footer>
+  </body>
+</html>
+

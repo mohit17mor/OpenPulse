@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenPulse</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">OpenPulse MVP</p>
+          <h1>Mark a visible fact. Watch for its pulse.</h1>
+          <p class="subtle">
+            Open a controlled browser, press <kbd>M</kbd> on the target page, select a highlighted fact, then save a condition.
+          </p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <h2>Browser</h2>
+          <div class="row">
+            <input id="urlInput" type="url" value="http://127.0.0.1:8000/fixtures/product.html" aria-label="URL" />
+            <button id="launchButton">Launch</button>
+            <button id="navigateButton">Navigate</button>
+          </div>
+          <div class="row">
+            <button id="monitorModeButton">Enable Monitor Mode</button>
+            <button id="clearSelectionButton">Clear Selection</button>
+          </div>
+          <p id="browserStatus" class="status">Launch Chromium, navigate, then press M in the browser window.</p>
+        </div>
+
+        <div class="panel">
+          <h2>Selected Target</h2>
+          <pre id="selectionPreview" class="preview">No target selected yet.</pre>
+          <form id="monitorForm" class="form">
+            <label>
+              Monitor name
+              <input id="monitorName" type="text" value="Price watch" />
+            </label>
+            <label>
+              Condition
+              <select id="conditionType">
+                <option value="changed">changes</option>
+                <option value="less_than">less than</option>
+                <option value="greater_than">greater than</option>
+                <option value="equals">equals</option>
+                <option value="contains">contains</option>
+                <option value="appears">appears</option>
+                <option value="disappears">disappears</option>
+              </select>
+            </label>
+            <label id="conditionValueRow">
+              Condition value
+              <input id="conditionValue" type="text" placeholder="100" />
+            </label>
+            <label>
+              Check interval seconds
+              <input id="intervalSeconds" type="number" min="30" value="300" />
+            </label>
+            <button type="submit">Save Monitor</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panelHeader">
+            <h2>Monitors</h2>
+            <button id="refreshMonitorsButton">Refresh</button>
+          </div>
+          <div id="monitorsList" class="list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHeader">
+            <h2>Logs</h2>
+            <button id="refreshLogsButton">Refresh</button>
+          </div>
+          <div id="logsList" class="list"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
+
