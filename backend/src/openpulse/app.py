@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
+from openpulse.scripts import run_script_preview
 from openpulse.scheduler import MonitorScheduler
 from openpulse.storage import Database
 
@@ -33,6 +34,13 @@ class MonitorRequest(BaseModel):
     condition: dict[str, Any]
     intervalSeconds: int = 300
     enabled: bool = True
+
+
+class ScriptPreviewRequest(BaseModel):
+    command: str
+    args: list[str] = []
+    cwd: str | None = None
+    timeoutSeconds: int = 10
 
 
 def create_app(
@@ -102,18 +110,34 @@ def create_app(
         browser_controller.latest_selection = None
         return {"status": "cleared"}
 
+    @app.post("/api/scripts/preview")
+    async def preview_script(request: ScriptPreviewRequest) -> dict[str, Any]:
+        return await run_script_preview(
+            {
+                "command": request.command,
+                "args": request.args,
+                "cwd": request.cwd,
+                "timeoutSeconds": request.timeoutSeconds,
+            }
+        )
+
     @app.post("/api/monitors")
     async def create_monitor(request: MonitorRequest) -> dict[str, Any]:
-        return db.create_monitor(
+        target = dict(request.target)
+        baseline_items = target.pop("_baselineItems", [])
+        monitor = db.create_monitor(
             {
                 "name": request.name,
                 "url": request.url,
-                "target": request.target,
+                "target": target,
                 "condition": request.condition,
                 "intervalSeconds": request.intervalSeconds,
                 "enabled": request.enabled,
             }
         )
+        if target.get("sourceType") == "script" and target.get("selection", {}).get("mode") == "items":
+            db.add_script_seen_items(monitor["id"], baseline_items)
+        return monitor
 
     @app.get("/api/monitors")
     async def list_monitors() -> list[dict[str, Any]]:

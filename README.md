@@ -43,6 +43,42 @@ OpenPulse checks use the already-launched app browser session when one exists. T
 
 If a site serves a bot/security verification page, logs show `blocked` with `security_verification` instead of a generic missing target.
 
+## Script Monitors
+
+OpenPulse can run local scripts on the same scheduler. The setup flow mirrors website monitoring:
+
+1. Choose `Script`.
+2. Enter command, args, working directory, and timeout.
+3. Click `Run Preview`.
+4. Select a scalar output field or a JSON array of items.
+5. Save the monitor.
+
+Plain text stdout is treated as one value. JSON stdout is rendered as selectable scalar paths and item-list arrays. For item-list monitors, choose a stable ID field such as `guid`, `id`, or Jira `key`; OpenPulse stores the preview items as the baseline and logs only new IDs seen in later runs.
+
+Example scalar JSON:
+
+```bash
+python3 fixtures/scripts/price_json.py
+```
+
+Select `btc.price` and choose a numeric condition.
+
+Example plain text:
+
+```bash
+python3 fixtures/scripts/plain_count.py
+```
+
+Select `$stdout`.
+
+Example item-list snapshot:
+
+```bash
+python3 fixtures/scripts/feed_items.py
+```
+
+Select `items[]`, set ID field to `guid`, display field to `title`, and URL field to `link`.
+
 ## Test
 
 ```bash

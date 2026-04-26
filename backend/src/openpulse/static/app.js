@@ -1,5 +1,8 @@
 const state = {
+  source: "website",
   selection: null,
+  scriptPreview: null,
+  scriptSelection: null,
   monitors: [],
   logs: []
 };
@@ -19,10 +22,24 @@ async function api(path, options = {}) {
 }
 
 function setStatus(message) {
-  $("browserStatus").textContent = message;
+  if (state.source === "script") $("scriptStatus").textContent = message;
+  else $("browserStatus").textContent = message;
+}
+
+function setSource(source) {
+  state.source = source;
+  $("websiteSourceButton").classList.toggle("active", source === "website");
+  $("scriptSourceButton").classList.toggle("active", source === "script");
+  $("websitePanel").classList.toggle("hidden", source !== "website");
+  $("scriptPanel").classList.toggle("hidden", source !== "script");
+  renderSelection();
+  updateConditionOptions();
 }
 
 function conditionFromForm() {
+  if (state.source === "script" && state.scriptSelection?.mode === "items") {
+    return { type: "new_item" };
+  }
   const type = $("conditionType").value;
   const rawValue = $("conditionValue").value.trim();
   if (["changed", "appears", "disappears"].includes(type)) {
@@ -34,15 +51,171 @@ function conditionFromForm() {
   return { type, value: rawValue };
 }
 
+function updateConditionOptions() {
+  const select = $("conditionType");
+  if (state.source === "script" && state.scriptSelection?.mode === "items") {
+    select.innerHTML = '<option value="new_item">new item appears</option>';
+    $("conditionValueRow").style.display = "none";
+    return;
+  }
+  const numeric = state.source === "website"
+    ? state.selection?.semanticType === "price" || state.selection?.semanticType === "number"
+    : state.scriptSelection?.valueType === "number";
+  select.innerHTML = numeric
+    ? `
+      <option value="changed">changes</option>
+      <option value="less_than">less than</option>
+      <option value="greater_than">greater than</option>
+      <option value="equals">equals</option>
+    `
+    : `
+      <option value="changed">changes</option>
+      <option value="equals">equals</option>
+      <option value="contains">contains</option>
+      <option value="appears">appears</option>
+      <option value="disappears">disappears</option>
+    `;
+  updateConditionValueVisibility();
+}
+
 function updateConditionValueVisibility() {
   const type = $("conditionType").value;
-  $("conditionValueRow").style.display = ["changed", "appears", "disappears"].includes(type) ? "none" : "grid";
+  $("conditionValueRow").style.display = ["changed", "appears", "disappears", "new_item"].includes(type) ? "none" : "grid";
 }
 
 function renderSelection() {
+  $("scriptOutputPicker").classList.toggle("hidden", state.source !== "script");
+  if (state.source === "script") {
+    $("selectionPreview").textContent = state.scriptSelection
+      ? JSON.stringify(state.scriptSelection, null, 2)
+      : "Run a script preview and select an output node.";
+    renderScriptOutputPicker();
+    return;
+  }
   $("selectionPreview").textContent = state.selection
     ? JSON.stringify(state.selection, null, 2)
     : "No target selected yet.";
+}
+
+function renderScriptOutputPicker() {
+  const container = $("scriptOutputPicker");
+  if (!state.scriptPreview) {
+    container.innerHTML = "";
+    return;
+  }
+  if (!state.scriptPreview.ok) {
+    container.innerHTML = `
+      <article class="item">
+        <div class="itemTitle"><span class="missing">${escapeHtml(state.scriptPreview.error)}</span></div>
+        <div class="itemMeta">${escapeHtml(state.scriptPreview.execution?.stderr || "Script preview failed.")}</div>
+      </article>
+    `;
+    return;
+  }
+  container.innerHTML = state.scriptPreview.nodes.map((node, index) => renderOutputNode(node, index)).join("");
+  container.querySelectorAll("[data-node-index]").forEach((button) => {
+    button.addEventListener("click", () => selectScriptNode(Number(button.dataset.nodeIndex)));
+  });
+  container.querySelectorAll("[data-item-field]").forEach((select) => {
+    select.addEventListener("change", updateScriptItemSelectionFromFields);
+  });
+}
+
+function renderOutputNode(node, index) {
+  const selected = state.scriptSelection?.nodeIndex === index;
+  if (node.kind === "array") {
+    const fields = node.idFieldOptions || [];
+    const optionHtml = (selectedValue) => fields
+      .map((field) => {
+        const selectedAttr = field === selectedValue ? " selected" : "";
+        return `<option value="${escapeHtml(field)}"${selectedAttr}>${escapeHtml(field)}</option>`;
+      })
+      .join("");
+    const fieldSelectors = selected
+      ? `
+        <div class="row">
+          <label>ID field<select data-item-field="idField">${optionHtml(state.scriptSelection?.idField || "")}</select></label>
+          <label>Display field<select data-item-field="displayField"><option value=""${state.scriptSelection?.displayField ? "" : " selected"}>ID</option>${optionHtml(state.scriptSelection?.displayField || "")}</select></label>
+          <label>URL field<select data-item-field="urlField"><option value=""${state.scriptSelection?.urlField ? "" : " selected"}>None</option>${optionHtml(state.scriptSelection?.urlField || "")}</select></label>
+        </div>
+      `
+      : "";
+    return `
+      <div>
+        <button type="button" class="nodeButton ${selected ? "selected" : ""}" data-node-index="${index}">
+          Items: ${escapeHtml(node.path)}[]
+          <div class="nodeMeta">${node.length} item(s), fields: ${escapeHtml(fields.join(", ") || "none")}</div>
+        </button>
+        ${fieldSelectors}
+      </div>
+    `;
+  }
+  return `
+    <button type="button" class="nodeButton ${selected ? "selected" : ""}" data-node-index="${index}">
+      ${escapeHtml(node.path)} = ${escapeHtml(String(node.value))}
+      <div class="nodeMeta">${escapeHtml(node.valueType)}</div>
+    </button>
+  `;
+}
+
+function selectScriptNode(index) {
+  const node = state.scriptPreview.nodes[index];
+  if (node.kind === "array") {
+    const idField = (node.idFieldOptions || [])[0] || "";
+    state.scriptSelection = {
+      nodeIndex: index,
+      mode: "items",
+      outputType: "json",
+      arrayPath: node.path,
+      idField,
+      displayField: "",
+      urlField: ""
+    };
+    $("monitorName").value = `new items in ${node.path}`;
+  } else {
+    state.scriptSelection = {
+      nodeIndex: index,
+      mode: "scalar",
+      outputType: state.scriptPreview.outputType,
+      path: node.path,
+      initialValue: String(node.value),
+      valueType: node.valueType
+    };
+    $("monitorName").value = `${node.path} watch`;
+  }
+  updateConditionOptions();
+  renderSelection();
+}
+
+function updateScriptItemSelectionFromFields() {
+  if (!state.scriptSelection || state.scriptSelection.mode !== "items") return;
+  $("scriptOutputPicker").querySelectorAll("[data-item-field]").forEach((select) => {
+    state.scriptSelection[select.dataset.itemField] = select.value;
+  });
+  renderSelection();
+}
+
+function scriptConfigFromForm() {
+  return {
+    command: $("scriptCommand").value.trim(),
+    args: $("scriptArgs").value.split("\n").map((line) => line.trim()).filter(Boolean),
+    cwd: $("scriptCwd").value.trim() || null,
+    timeoutSeconds: Number($("scriptTimeout").value || 10)
+  };
+}
+
+function scriptBaselineItems() {
+  if (!state.scriptPreview || state.scriptSelection?.mode !== "items") return [];
+  const items = getPath(state.scriptPreview.parsed, state.scriptSelection.arrayPath);
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item && Object.prototype.hasOwnProperty.call(item, state.scriptSelection.idField))
+    .map((item) => ({ id: String(item[state.scriptSelection.idField]), item }));
+}
+
+function getPath(value, path) {
+  if (!path || path === "$") return value;
+  return path.split(".").reduce((current, part) => current && current[part], value);
 }
 
 function renderMonitors() {
@@ -62,8 +235,7 @@ function renderMonitors() {
               <button class="danger" data-delete-monitor="${monitor.id}">Delete</button>
             </span>
           </div>
-          <div class="itemMeta">${escapeHtml(monitor.url)}</div>
-          <div class="itemMeta">${escapeHtml(monitor.target.semanticType)}: ${escapeHtml(monitor.target.initialValue || "")}</div>
+          <div class="itemMeta">${escapeHtml(monitorSummary(monitor))}</div>
           <div class="itemMeta">Condition: ${escapeHtml(JSON.stringify(monitor.condition))}</div>
           <div class="itemMeta">Interval: ${monitor.intervalSeconds}s · Last checked: ${monitor.lastCheckedAt ? new Date(monitor.lastCheckedAt).toLocaleString() : "not yet"}</div>
         </article>
@@ -92,6 +264,17 @@ function renderMonitors() {
   });
 }
 
+function monitorSummary(monitor) {
+  if (monitor.target?.sourceType === "script") {
+    const selection = monitor.target.selection || {};
+    if (selection.mode === "items") {
+      return `Script: new items in ${selection.arrayPath} by ${selection.idField}`;
+    }
+    return `Script: ${selection.path || "$stdout"}`;
+  }
+  return `Website: ${monitor.url} · ${monitor.target?.semanticType || "target"}: ${monitor.target?.initialValue || ""}`;
+}
+
 function renderLogs() {
   const container = $("logsList");
   if (state.logs.length === 0) {
@@ -108,25 +291,25 @@ function renderLogs() {
           </div>
           <div class="itemMeta">${escapeHtml(log.message)}</div>
           <div class="itemMeta">Previous: ${escapeHtml(log.previousValue || "-")}</div>
-          <div class="itemMeta">Current: ${escapeHtml(log.currentValue || "-")}</div>
+          <div class="itemMeta">Current: ${escapeHtml(logDisplayValue(log))}</div>
         </article>
       `
     )
     .join("");
 }
 
+function logDisplayValue(log) {
+  return log.details?.display || log.currentValue || "-";
+}
+
 async function refreshSelection() {
+  if (state.source !== "website") return;
   const selection = await api("/api/selection");
   if (selection && JSON.stringify(selection) !== JSON.stringify(state.selection)) {
     state.selection = selection;
     $("monitorName").value = `${selection.semanticType} watch`;
-    if (selection.semanticType === "price" || selection.semanticType === "number") {
-      $("conditionType").value = "less_than";
-      $("conditionValue").value = "";
-    } else {
-      $("conditionType").value = "changed";
-    }
-    updateConditionValueVisibility();
+    $("conditionType").value = selection.semanticType === "price" || selection.semanticType === "number" ? "less_than" : "changed";
+    updateConditionOptions();
     renderSelection();
   }
 }
@@ -149,6 +332,9 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+$("websiteSourceButton").addEventListener("click", () => setSource("website"));
+$("scriptSourceButton").addEventListener("click", () => setSource("script"));
 
 $("launchButton").addEventListener("click", async () => {
   setStatus("Launching browser...");
@@ -177,10 +363,34 @@ $("clearSelectionButton").addEventListener("click", async () => {
   renderSelection();
 });
 
+$("runScriptPreviewButton").addEventListener("click", async () => {
+  const config = scriptConfigFromForm();
+  if (!config.command) {
+    setStatus("Enter a command before running preview.");
+    return;
+  }
+  setStatus("Running script preview...");
+  state.scriptPreview = await api("/api/scripts/preview", {
+    method: "POST",
+    body: JSON.stringify(config)
+  });
+  state.scriptSelection = null;
+  setStatus(state.scriptPreview.ok ? "Preview ready. Select a value or item list." : `Preview failed: ${state.scriptPreview.error}`);
+  renderSelection();
+});
+
 $("conditionType").addEventListener("change", updateConditionValueVisibility);
 
 $("monitorForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.source === "website") {
+    await saveWebsiteMonitor();
+  } else {
+    await saveScriptMonitor();
+  }
+});
+
+async function saveWebsiteMonitor() {
   if (!state.selection) {
     setStatus("Select a target in the browser before saving a monitor.");
     return;
@@ -198,12 +408,48 @@ $("monitorForm").addEventListener("submit", async (event) => {
   });
   setStatus("Monitor saved.");
   await refreshMonitors();
-});
+}
+
+async function saveScriptMonitor() {
+  if (!state.scriptSelection) {
+    setStatus("Run preview and select script output before saving.");
+    return;
+  }
+  if (state.scriptSelection.mode === "items" && !state.scriptSelection.idField) {
+    setStatus("Choose an ID field before saving an item-list monitor.");
+    return;
+  }
+  const config = scriptConfigFromForm();
+  const selection = { ...state.scriptSelection };
+  delete selection.nodeIndex;
+  delete selection.valueType;
+  const target = {
+    sourceType: "script",
+    script: config,
+    selection
+  };
+  if (selection.mode === "items") {
+    target._baselineItems = scriptBaselineItems();
+  }
+  await api("/api/monitors", {
+    method: "POST",
+    body: JSON.stringify({
+      name: $("monitorName").value.trim() || "Script monitor",
+      url: `script://${config.command}`,
+      target,
+      condition: conditionFromForm(),
+      intervalSeconds: Number($("intervalSeconds").value || 300),
+      enabled: true
+    })
+  });
+  setStatus("Script monitor saved.");
+  await refreshMonitors();
+}
 
 $("refreshMonitorsButton").addEventListener("click", refreshMonitors);
 $("refreshLogsButton").addEventListener("click", refreshLogs);
 
-updateConditionValueVisibility();
+setSource("website");
 renderSelection();
 await refreshMonitors();
 await refreshLogs();

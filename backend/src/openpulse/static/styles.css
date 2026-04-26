@@ -48,13 +48,18 @@ button.danger {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 9px 10px;
   background: #fff;
   color: var(--ink);
+}
+
+textarea {
+  resize: vertical;
 }
 
 kbd {
@@ -108,6 +113,36 @@ h2 {
   margin-bottom: 18px;
 }
 
+.sourcePanel {
+  margin-bottom: 18px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.segmented button {
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  color: var(--ink);
+  min-width: 110px;
+}
+
+.segmented button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -154,6 +189,31 @@ label {
   background: #f1f4f5;
   border-radius: 6px;
   white-space: pre-wrap;
+}
+
+.scriptOutput {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.nodeButton {
+  width: 100%;
+  text-align: left;
+  border-color: var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+
+.nodeButton.selected {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(19, 111, 99, 0.16);
+}
+
+.nodeMeta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
 }
 
 .list {

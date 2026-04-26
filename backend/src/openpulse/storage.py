@@ -50,6 +50,15 @@ class Database:
                     created_at text not null,
                     foreign key(monitor_id) references monitors(id)
                 );
+
+                create table if not exists script_seen_items (
+                    monitor_id text not null,
+                    item_id text not null,
+                    item_json text not null,
+                    first_seen_at text not null,
+                    primary key(monitor_id, item_id),
+                    foreign key(monitor_id) references monitors(id)
+                );
                 """
             )
 
@@ -123,11 +132,46 @@ class Database:
                 (utc_now(), monitor_id),
             )
 
+    def update_monitor_target(self, monitor_id: str, target: dict[str, Any]) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "update monitors set target_json = ? where id = ?",
+                (json.dumps(target), monitor_id),
+            )
+
     def delete_monitor(self, monitor_id: str) -> bool:
         with self.connect() as conn:
             conn.execute("delete from logs where monitor_id = ?", (monitor_id,))
+            conn.execute("delete from script_seen_items where monitor_id = ?", (monitor_id,))
             cursor = conn.execute("delete from monitors where id = ?", (monitor_id,))
             return cursor.rowcount > 0
+
+    def add_script_seen_items(self, monitor_id: str, items: list[dict[str, Any]]) -> None:
+        now = utc_now()
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                insert or ignore into script_seen_items (monitor_id, item_id, item_json, first_seen_at)
+                values (?, ?, ?, ?)
+                """,
+                [
+                    (
+                        monitor_id,
+                        str(item["id"]),
+                        json.dumps(item.get("item", item), sort_keys=True),
+                        now,
+                    )
+                    for item in items
+                ],
+            )
+
+    def list_script_seen_item_ids(self, monitor_id: str) -> set[str]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "select item_id from script_seen_items where monitor_id = ? order by first_seen_at",
+                (monitor_id,),
+            ).fetchall()
+        return {row["item_id"] for row in rows}
 
     def create_log(self, payload: dict[str, Any]) -> dict[str, Any]:
         log = {

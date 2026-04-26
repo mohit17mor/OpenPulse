@@ -1,4 +1,6 @@
 from fastapi.testclient import TestClient
+import json
+import sys
 
 from openpulse.app import create_app
 from openpulse.checker import ExtractedValue
@@ -70,3 +72,52 @@ def test_monitor_api_deletes_monitor(tmp_path):
     assert delete_response.status_code == 200
     assert delete_response.json() == {"status": "deleted"}
     assert client.get("/api/monitors").json() == []
+
+
+def test_script_preview_api_returns_selectable_nodes(tmp_path):
+    script = tmp_path / "feed.py"
+    script.write_text('print("""{"items": [{"guid": "a", "title": "A"}]}""")\n')
+    app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/scripts/preview",
+        json={
+            "command": sys.executable,
+            "args": [str(script)],
+            "cwd": str(tmp_path),
+            "timeoutSeconds": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["nodes"][0]["kind"] == "array"
+    assert response.json()["nodes"][0]["path"] == "items"
+
+
+def test_script_item_monitor_save_baselines_preview_items(tmp_path):
+    app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
+    client = TestClient(app)
+    baseline_items = [{"id": "a", "item": {"id": "a", "title": "A"}}]
+
+    response = client.post(
+        "/api/monitors",
+        json={
+            "name": "Feed watch",
+            "url": "script://feed.py",
+            "target": {
+                "sourceType": "script",
+                "script": {"command": sys.executable, "args": ["feed.py"], "cwd": str(tmp_path), "timeoutSeconds": 5},
+                "selection": {"mode": "items", "outputType": "json", "arrayPath": "items", "idField": "id"},
+                "_baselineItems": baseline_items,
+            },
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 30,
+        },
+    )
+
+    assert response.status_code == 200
+    monitor_id = response.json()["id"]
+    assert response.json()["target"].get("_baselineItems") is None
+    assert client.delete(f"/api/monitors/{monitor_id}").status_code == 200

@@ -75,10 +75,12 @@ def test_database_deletes_monitor_and_its_logs(tmp_path):
             "details": {},
         }
     )
+    db.add_script_seen_items(monitor["id"], [{"id": "item-1", "item": {"id": "item-1"}}])
 
     assert db.delete_monitor(monitor["id"]) is True
     assert db.list_monitors() == []
     assert db.list_logs() == []
+    assert db.list_script_seen_item_ids(monitor["id"]) == set()
 
 
 def test_database_lists_due_monitors(tmp_path):
@@ -109,3 +111,28 @@ def test_database_lists_due_monitors(tmp_path):
 
     assert [monitor["id"] for monitor in due_monitors] == [due_monitor["id"]]
 
+
+def test_database_stores_script_seen_items_once(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = db.create_monitor(
+        {
+            "name": "Feed",
+            "url": "script://feed.py",
+            "target": {"sourceType": "script"},
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 30,
+            "enabled": True,
+        }
+    )
+
+    db.add_script_seen_items(
+        monitor["id"],
+        [
+            {"id": "a", "item": {"id": "a", "title": "A"}},
+            {"id": "a", "item": {"id": "a", "title": "A again"}},
+            {"id": "b", "item": {"id": "b", "title": "B"}},
+        ],
+    )
+
+    assert db.list_script_seen_item_ids(monitor["id"]) == {"a", "b"}

@@ -11,15 +11,23 @@
       <section class="hero">
         <div>
           <p class="eyebrow">OpenPulse MVP</p>
-          <h1>Mark a visible fact. Watch for its pulse.</h1>
+          <h1>Turn websites and scripts into monitored signals.</h1>
           <p class="subtle">
-            Open a controlled browser, press <kbd>M</kbd> on the target page, select a highlighted fact, then save a condition.
+            Select a visible website fact, or run a local script and choose the output field or item list to monitor.
           </p>
         </div>
       </section>
 
+      <section class="panel sourcePanel">
+        <h2>New Monitor</h2>
+        <div class="segmented" role="tablist" aria-label="Monitor source">
+          <button id="websiteSourceButton" class="active" type="button">Website</button>
+          <button id="scriptSourceButton" type="button">Script</button>
+        </div>
+      </section>
+
       <section class="grid">
-        <div class="panel">
+        <div id="websitePanel" class="panel">
           <h2>Browser</h2>
           <div class="row">
             <input id="urlInput" type="url" value="http://127.0.0.1:8000/fixtures/product.html" aria-label="URL" />
@@ -33,9 +41,34 @@
           <p id="browserStatus" class="status">Launch Chromium, navigate, then press M in the browser window.</p>
         </div>
 
+        <div id="scriptPanel" class="panel hidden">
+          <h2>Script</h2>
+          <div class="form">
+            <label>
+              Command
+              <input id="scriptCommand" type="text" value="python3" />
+            </label>
+            <label>
+              Arguments
+              <textarea id="scriptArgs" rows="3" placeholder="/Users/mmor/scripts/feed.py"></textarea>
+            </label>
+            <label>
+              Working directory
+              <input id="scriptCwd" type="text" placeholder="/Users/mmor/scripts" />
+            </label>
+            <label>
+              Timeout seconds
+              <input id="scriptTimeout" type="number" min="1" value="10" />
+            </label>
+            <button id="runScriptPreviewButton" type="button">Run Preview</button>
+          </div>
+          <p id="scriptStatus" class="status">Run a script, then select a scalar value or JSON item list from its output.</p>
+        </div>
+
         <div class="panel">
           <h2>Selected Target</h2>
           <pre id="selectionPreview" class="preview">No target selected yet.</pre>
+          <div id="scriptOutputPicker" class="scriptOutput hidden"></div>
           <form id="monitorForm" class="form">
             <label>
               Monitor name
@@ -87,4 +120,3 @@
     <script type="module" src="/static/app.js"></script>
   </body>
 </html>
-
