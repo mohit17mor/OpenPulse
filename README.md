@@ -37,10 +37,15 @@ Open `http://127.0.0.1:8000`.
 6. Save a monitor with `less than 100`.
 7. Change the saved monitor URL to `http://127.0.0.1:8000/fixtures/product_changed.html` in the database or create a monitor from that fixture to test a matched check.
 
+## Browser Sessions And Protected Pages
+
+OpenPulse checks use the already-launched app browser session when one exists. This helps with pages that behave differently in a fresh headless browser. If no app browser is open, checks fall back to a separate headless browser.
+
+If a site serves a bot/security verification page, logs show `blocked` with `security_verification` instead of a generic missing target.
+
 ## Test
 
 ```bash
 cd /Users/mmor/scratch/openpulse
 .venv/bin/pytest backend -q
 ```
-

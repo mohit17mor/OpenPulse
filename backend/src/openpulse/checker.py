@@ -38,10 +38,15 @@ class CheckEngine:
             found=extracted.found,
         )
 
-        if not extracted.found:
+        if extracted.details.get("reason") == "security_verification":
+            status = "blocked"
+            message = "security_verification"
+        elif not extracted.found:
             status = "matched" if condition_result.matched else "missing"
+            message = condition_result.reason
         else:
             status = "matched" if condition_result.matched else "checked"
+            message = condition_result.reason
 
         log = self.db.create_log(
             {
@@ -50,10 +55,9 @@ class CheckEngine:
                 "previousValue": previous_value,
                 "currentValue": extracted.value,
                 "conditionMatched": condition_result.matched,
-                "message": condition_result.reason,
+                "message": message,
                 "details": extracted.details,
             }
         )
         self.db.mark_checked(monitor_id)
         return log
-

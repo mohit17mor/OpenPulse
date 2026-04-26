@@ -58,3 +58,25 @@ async def test_check_engine_logs_missing_target(tmp_path):
     assert logs[0]["conditionMatched"] is False
     assert logs[0]["message"] == "target_missing"
 
+
+async def test_check_engine_logs_security_verification_as_blocked(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = make_monitor(db)
+    engine = CheckEngine(
+        db,
+        FakeExtractor(
+            ExtractedValue(
+                found=False,
+                value=None,
+                details={"reason": "security_verification", "title": "Just a moment..."},
+            )
+        ),
+    )
+
+    result = await engine.run_check(monitor["id"])
+
+    logs = db.list_logs()
+    assert result["status"] == "blocked"
+    assert logs[0]["message"] == "security_verification"
+

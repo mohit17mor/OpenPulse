@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from openpulse.browser import BrowserController, PlaywrightExtractor
+from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
 from openpulse.scheduler import MonitorScheduler
 from openpulse.storage import Database
@@ -46,7 +46,8 @@ def create_app(
     db = Database(db_path)
     db.initialize()
     browser_controller = browser or BrowserController()
-    check_engine = CheckEngine(db, extractor or PlaywrightExtractor())
+    check_extractor = extractor or SessionFirstExtractor(browser_controller, PlaywrightExtractor())
+    check_engine = CheckEngine(db, check_extractor)
     scheduler = MonitorScheduler(db, check_engine, poll_seconds=scheduler_poll_seconds)
 
     @asynccontextmanager

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,9 @@ class BrowserController:
         await self._expose_bindings(self.page)
         return {"status": "opened"}
 
+    def has_active_session(self) -> bool:
+        return self.context is not None and self.browser is not None
+
     async def navigate(self, url: str) -> dict[str, str]:
         page = await self.ensure_page()
         if not url.startswith(("http://", "https://", "file://")):
@@ -53,13 +57,24 @@ class BrowserController:
 
     async def close(self) -> None:
         if self.browser is not None:
-            await self.browser.close()
+            with suppress(Exception):
+                await self.browser.close()
         if self.playwright is not None:
-            await self.playwright.stop()
+            with suppress(Exception):
+                await self.playwright.stop()
         self.playwright = None
         self.browser = None
         self.context = None
         self.page = None
+
+    async def extract(self, url: str, target: dict[str, Any]) -> ExtractedValue:
+        if self.context is None:
+            return ExtractedValue(found=False, value=None, details={"reason": "no_browser_session"})
+        page = await self.context.new_page()
+        try:
+            return await extract_from_page(page, url, target, source="browser_session")
+        finally:
+            await page.close()
 
     async def ensure_page(self) -> Page:
         if self.page is None:
@@ -93,21 +108,77 @@ class PlaywrightExtractor:
                 browser = await playwright.chromium.launch(headless=True)
             page = await browser.new_page()
             try:
-                await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-                await page.wait_for_timeout(500)
-                value = await _extract_target_value(page, target)
-                if value is None:
-                    return ExtractedValue(found=False, value=None, details={"reason": "target_not_found"})
-                return ExtractedValue(
-                    found=True,
-                    value=value,
-                    details={
-                        "selector": target.get("selector"),
-                        "semanticType": target.get("semanticType"),
-                    },
-                )
+                return await extract_from_page(page, url, target, source="headless")
             finally:
                 await browser.close()
+
+
+class SessionFirstExtractor:
+    def __init__(self, session_extractor: Any, fallback_extractor: Any):
+        self.session_extractor = session_extractor
+        self.fallback_extractor = fallback_extractor
+
+    async def extract(self, url: str, target: dict[str, Any]) -> ExtractedValue:
+        if self.session_extractor.has_active_session():
+            return await self.session_extractor.extract(url, target)
+        return await self.fallback_extractor.extract(url, target)
+
+
+async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, source: str) -> ExtractedValue:
+    response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    await page.wait_for_timeout(2500)
+    blocker = await _detect_security_verification(page, response.status if response else None)
+    if blocker is not None:
+        blocker["source"] = source
+        return ExtractedValue(found=False, value=None, details=blocker)
+
+    value = await _extract_target_value(page, target)
+    if value is None:
+        return ExtractedValue(
+            found=False,
+            value=None,
+            details={
+                "reason": "target_not_found",
+                "source": source,
+                "selector": target.get("selector"),
+                "semanticType": target.get("semanticType"),
+            },
+        )
+    return ExtractedValue(
+        found=True,
+        value=value,
+        details={
+            "source": source,
+            "selector": target.get("selector"),
+            "semanticType": target.get("semanticType"),
+        },
+    )
+
+
+async def _detect_security_verification(page: Page, status: int | None) -> dict[str, Any] | None:
+    title = ""
+    body = ""
+    try:
+        title = await page.title()
+        body = (await page.locator("body").inner_text(timeout=2000))[:1000]
+    except Exception:
+        pass
+    fingerprint = f"{title}\n{body}".lower()
+    phrases = [
+        "just a moment",
+        "security verification",
+        "verify you are not a bot",
+        "cloudflare",
+        "access denied",
+        "unusual traffic",
+    ]
+    if status in {401, 403, 429} and any(phrase in fingerprint for phrase in phrases):
+        return {
+            "reason": "security_verification",
+            "httpStatus": status,
+            "title": title,
+        }
+    return None
 
 
 async def _extract_target_value(page: Page, target: dict[str, Any]) -> str | None:
