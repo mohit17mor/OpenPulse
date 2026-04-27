@@ -4,47 +4,79 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenPulse</title>
-    <link rel="stylesheet" href="/static/styles.css?v=professional-ui-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-1" />
   </head>
   <body>
-    <main class="appShell">
-      <header class="topBar">
-        <div class="brand">
+    <div class="appFrame">
+      <aside class="sidebar">
+        <div class="windowDots" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+
+        <div class="sideBrand">
           <div class="brandMark">OP</div>
           <div>
             <div class="brandName">OpenPulse</div>
             <div class="brandSub">Local monitor console</div>
           </div>
         </div>
-        <div class="topMeta">
+
+        <nav class="sideNav" aria-label="OpenPulse navigation">
+          <div class="navGroup">
+            <div class="navLabel">Create</div>
+            <button id="websiteSourceButton" class="navItem active" type="button">
+              <span class="navIcon">W</span>
+              <span>
+                <strong>Website monitor</strong>
+                <small>Select from a page</small>
+              </span>
+            </button>
+            <button id="scriptSourceButton" class="navItem" type="button">
+              <span class="navIcon">S</span>
+              <span>
+                <strong>Script monitor</strong>
+                <small>Run local output</small>
+              </span>
+            </button>
+          </div>
+
+          <div class="navGroup">
+            <div class="navLabel">Workspace</div>
+            <a class="navLink" href="#monitors">Saved monitors</a>
+            <a class="navLink" href="#events">Recent events</a>
+          </div>
+
+          <div class="navGroup">
+            <div class="navLabel">Starter folder</div>
+            <div class="folderCard">
+              <code>/Users/mmor/scratch/openpulse/sample-scripts</code>
+              <span>empty</span>
+            </div>
+          </div>
+        </nav>
+
+        <div class="sideFooter">
           <span class="healthDot"></span>
           Backend online
         </div>
-      </header>
+      </aside>
 
-      <section class="workspaceHeader">
-        <div>
-          <p class="eyebrow">Create monitor</p>
-          <h1>Choose a source, preview the signal, save the rule.</h1>
-        </div>
-        <div class="segmented" role="tablist" aria-label="Monitor source">
-          <button id="websiteSourceButton" class="active" type="button">
-            <span>Website</span>
-            <small>visual page picker</small>
-          </button>
-          <button id="scriptSourceButton" type="button">
-            <span>Script</span>
-            <small>local data output</small>
-          </button>
-        </div>
-      </section>
+      <main class="mainPane">
+        <header class="mainHeader">
+          <div>
+            <div class="crumb">OpenPulse</div>
+            <h1>Create a monitor</h1>
+          </div>
+          <p>Choose a source on the left, preview the signal, and save the rule.</p>
+        </header>
 
-      <section class="setupGrid">
-        <div class="setupColumn">
-          <div id="websitePanel" class="panel setupPanel">
-            <div class="panelHeader">
+        <section class="workSurface">
+          <div id="websitePanel" class="sourcePanel">
+            <div class="sectionHeader">
               <div>
-                <p class="panelKicker">Website source</p>
+                <p class="kicker">Website source</p>
                 <h2>Open a page and select what changes</h2>
               </div>
             </div>
@@ -60,10 +92,10 @@
             <p id="browserStatus" class="status">Launch Chromium, open a page, then press M or use Select on page.</p>
           </div>
 
-          <div id="scriptPanel" class="panel setupPanel hidden">
-            <div class="panelHeader">
+          <div id="scriptPanel" class="sourcePanel hidden">
+            <div class="sectionHeader">
               <div>
-                <p class="panelKicker">Script source</p>
+                <p class="kicker">Script source</p>
                 <h2>Run a local script and preview its output</h2>
               </div>
             </div>
@@ -86,80 +118,74 @@
               </label>
               <button id="runScriptPreviewButton" type="button">Run preview</button>
             </div>
-            <div class="starterBox">
-              <div>
-                <div class="starterTitle">Starter script folder</div>
-                <code>/Users/mmor/scratch/openpulse/sample-scripts</code>
-              </div>
-              <span>empty</span>
-            </div>
             <p id="scriptStatus" class="status">Run a script, then choose the value or list OpenPulse should watch.</p>
           </div>
-        </div>
 
-        <div class="panel targetPanel">
-          <div class="panelHeader">
-            <div>
-              <p class="panelKicker">Preview and rule</p>
-              <h2>Pick the signal to watch</h2>
+          <div class="previewPanel">
+            <div class="sectionHeader">
+              <div>
+                <p class="kicker">Preview and rule</p>
+                <h2>Pick the signal to watch</h2>
+              </div>
             </div>
+            <pre id="selectionPreview" class="preview">No target selected yet.</pre>
+            <div id="scriptOutputPicker" class="scriptOutput hidden"></div>
+            <form id="monitorForm" class="ruleForm">
+              <label>
+                Monitor name
+                <input id="monitorName" type="text" value="Price watch" />
+              </label>
+              <label>
+                Condition
+                <select id="conditionType">
+                  <option value="changed">changes</option>
+                  <option value="less_than">less than</option>
+                  <option value="greater_than">greater than</option>
+                  <option value="equals">equals</option>
+                  <option value="contains">contains</option>
+                  <option value="appears">appears</option>
+                  <option value="disappears">disappears</option>
+                </select>
+              </label>
+              <label id="conditionValueRow">
+                Condition value
+                <input id="conditionValue" type="text" placeholder="100" />
+              </label>
+              <label>
+                Check interval seconds
+                <input id="intervalSeconds" type="number" min="30" value="300" />
+              </label>
+              <button type="submit" class="saveButton">Save monitor</button>
+            </form>
           </div>
-          <pre id="selectionPreview" class="preview">No target selected yet.</pre>
-          <div id="scriptOutputPicker" class="scriptOutput hidden"></div>
-          <form id="monitorForm" class="ruleForm">
-            <label>
-              Monitor name
-              <input id="monitorName" type="text" value="Price watch" />
-            </label>
-            <label>
-              Condition
-              <select id="conditionType">
-                <option value="changed">changes</option>
-                <option value="less_than">less than</option>
-                <option value="greater_than">greater than</option>
-                <option value="equals">equals</option>
-                <option value="contains">contains</option>
-                <option value="appears">appears</option>
-                <option value="disappears">disappears</option>
-              </select>
-            </label>
-            <label id="conditionValueRow">
-              Condition value
-              <input id="conditionValue" type="text" placeholder="100" />
-            </label>
-            <label>
-              Check interval seconds
-              <input id="intervalSeconds" type="number" min="30" value="300" />
-            </label>
-            <button type="submit" class="saveButton">Save monitor</button>
-          </form>
-        </div>
-      </section>
+        </section>
 
-      <section class="activityGrid">
-        <div class="panel">
-          <div class="panelHeader">
-            <div>
-              <p class="panelKicker">Saved</p>
-              <h2>Monitors</h2>
+        <section class="bottomGrid">
+          <div id="monitors" class="infoPanel">
+            <div class="sectionHeader">
+              <div>
+                <p class="kicker">Saved</p>
+                <h2>Monitors</h2>
+              </div>
+              <button id="refreshMonitorsButton" class="ghost">Refresh</button>
             </div>
-            <button id="refreshMonitorsButton" class="ghost">Refresh</button>
+            <div id="monitorsList" class="list"></div>
           </div>
-          <div id="monitorsList" class="list"></div>
-        </div>
 
-        <div class="panel">
-          <div class="panelHeader">
-            <div>
-              <p class="panelKicker">Recent</p>
-              <h2>Events</h2>
+          <div id="events" class="infoPanel">
+            <div class="sectionHeader">
+              <div>
+                <p class="kicker">Recent</p>
+                <h2>Events</h2>
+              </div>
+              <button id="refreshLogsButton" class="ghost">Refresh</button>
             </div>
-            <button id="refreshLogsButton" class="ghost">Refresh</button>
+            <div id="logsList" class="list"></div>
           </div>
-          <div id="logsList" class="list"></div>
-        </div>
-      </section>
-    </main>
-    <script type="module" src="/static/app.js?v=professional-ui-1"></script>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/static/app.js?v=codex-shell-1"></script>
   </body>
 </html>
