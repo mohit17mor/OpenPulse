@@ -1,4 +1,5 @@
 const state = {
+  view: "website",
   source: "website",
   selection: null,
   scriptPreview: null,
@@ -26,12 +27,42 @@ function setStatus(message) {
   else $("browserStatus").textContent = message;
 }
 
+function setView(view) {
+  state.view = view;
+  const createViewActive = view === "website" || view === "script";
+  $("createView").classList.toggle("hidden", !createViewActive);
+  $("monitorsView").classList.toggle("hidden", view !== "monitors");
+  $("logsView").classList.toggle("hidden", view !== "logs");
+
+  $("websiteSourceButton").classList.toggle("active", view === "website");
+  $("scriptSourceButton").classList.toggle("active", view === "script");
+  $("monitorsViewButton").classList.toggle("active", view === "monitors");
+  $("logsViewButton").classList.toggle("active", view === "logs");
+
+  if (view === "website" || view === "script") {
+    setSource(view);
+  } else if (view === "monitors") {
+    $("mainCrumb").textContent = "Workspace";
+    $("mainTitle").textContent = "Saved monitors";
+    $("mainSubtitle").textContent = "Review monitor health, run checks, and delete rules you no longer need.";
+    refreshMonitors();
+  } else {
+    $("mainCrumb").textContent = "Workspace";
+    $("mainTitle").textContent = "Event logs";
+    $("mainSubtitle").textContent = "Inspect recent check outcomes, matches, missing targets, and script errors.";
+    refreshLogs();
+  }
+}
+
 function setSource(source) {
   state.source = source;
-  $("websiteSourceButton").classList.toggle("active", source === "website");
-  $("scriptSourceButton").classList.toggle("active", source === "script");
   $("websitePanel").classList.toggle("hidden", source !== "website");
   $("scriptPanel").classList.toggle("hidden", source !== "script");
+  $("mainCrumb").textContent = "Create";
+  $("mainTitle").textContent = source === "script" ? "Script monitor" : "Website monitor";
+  $("mainSubtitle").textContent = source === "script"
+    ? "Run a local command, select output, and save the rule."
+    : "Open a page, select a signal, and save the rule.";
   renderSelection();
   updateConditionOptions();
 }
@@ -432,8 +463,10 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-$("websiteSourceButton").addEventListener("click", () => setSource("website"));
-$("scriptSourceButton").addEventListener("click", () => setSource("script"));
+$("websiteSourceButton").addEventListener("click", () => setView("website"));
+$("scriptSourceButton").addEventListener("click", () => setView("script"));
+$("monitorsViewButton").addEventListener("click", () => setView("monitors"));
+$("logsViewButton").addEventListener("click", () => setView("logs"));
 
 $("launchButton").addEventListener("click", async () => {
   setStatus("Launching browser...");
@@ -548,7 +581,7 @@ async function saveScriptMonitor() {
 $("refreshMonitorsButton").addEventListener("click", refreshMonitors);
 $("refreshLogsButton").addEventListener("click", refreshLogs);
 
-setSource("website");
+setView("website");
 renderSelection();
 await refreshMonitors();
 await refreshLogs();

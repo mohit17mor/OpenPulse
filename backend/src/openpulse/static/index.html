@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenPulse</title>
-    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-2" />
   </head>
   <body>
     <div class="appFrame">
@@ -44,8 +44,20 @@
 
           <div class="navGroup">
             <div class="navLabel">Workspace</div>
-            <a class="navLink" href="#monitors">Saved monitors</a>
-            <a class="navLink" href="#events">Recent events</a>
+            <button id="monitorsViewButton" class="navItem" type="button">
+              <span class="navIcon">M</span>
+              <span>
+                <strong>Saved monitors</strong>
+                <small>Manage checks</small>
+              </span>
+            </button>
+            <button id="logsViewButton" class="navItem" type="button">
+              <span class="navIcon">E</span>
+              <span>
+                <strong>Event logs</strong>
+                <small>Review outcomes</small>
+              </span>
+            </button>
           </div>
 
           <div class="navGroup">
@@ -66,13 +78,13 @@
       <main class="mainPane">
         <header class="mainHeader">
           <div>
-            <div class="crumb">OpenPulse</div>
-            <h1>Create a monitor</h1>
+            <div id="mainCrumb" class="crumb">Create</div>
+            <h1 id="mainTitle">Website monitor</h1>
           </div>
-          <p>Choose a source on the left, preview the signal, and save the rule.</p>
+          <p id="mainSubtitle">Open a page, select a signal, and save the rule.</p>
         </header>
 
-        <section class="workSurface">
+        <section id="createView" class="workSurface">
           <div id="websitePanel" class="sourcePanel">
             <div class="sectionHeader">
               <div>
@@ -80,12 +92,13 @@
                 <h2>Open a page and select what changes</h2>
               </div>
             </div>
-            <div class="urlRow">
-              <input id="urlInput" type="url" value="http://127.0.0.1:8000/fixtures/product.html" aria-label="URL" />
+            <div class="browserForm">
+              <label>
+                Page URL
+                <input id="urlInput" type="url" value="http://127.0.0.1:8000/fixtures/product.html" aria-label="URL" />
+              </label>
               <button id="launchButton" class="secondary">Launch browser</button>
               <button id="navigateButton">Go</button>
-            </div>
-            <div class="buttonRow">
               <button id="monitorModeButton" type="button">Select on page</button>
               <button id="clearSelectionButton" class="ghost" type="button">Clear</button>
             </div>
@@ -160,7 +173,7 @@
           </div>
         </section>
 
-        <section class="bottomGrid">
+        <section id="monitorsView" class="focusView hidden">
           <div id="monitors" class="infoPanel">
             <div class="sectionHeader">
               <div>
@@ -171,7 +184,9 @@
             </div>
             <div id="monitorsList" class="list"></div>
           </div>
+        </section>
 
+        <section id="logsView" class="focusView hidden">
           <div id="events" class="infoPanel">
             <div class="sectionHeader">
               <div>
@@ -186,6 +201,6 @@
       </main>
     </div>
 
-    <script type="module" src="/static/app.js?v=codex-shell-1"></script>
+    <script type="module" src="/static/app.js?v=codex-shell-2"></script>
   </body>
 </html>

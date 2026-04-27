@@ -252,18 +252,6 @@ code {
   font-weight: 800;
 }
 
-.navLink {
-  display: block;
-  border-radius: 10px;
-  color: rgba(31, 35, 40, 0.78);
-  padding: 9px 12px;
-  text-decoration: none;
-}
-
-.navLink:hover {
-  background: var(--hover);
-}
-
 .folderCard {
   display: grid;
   gap: 8px;
@@ -357,7 +345,7 @@ h2 {
 }
 
 .workSurface,
-.bottomGrid {
+.focusView {
   display: grid;
   max-width: 1180px;
   margin: 0 auto 18px;
@@ -369,8 +357,8 @@ h2 {
   align-items: start;
 }
 
-.bottomGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.focusView {
+  grid-template-columns: 1fr;
 }
 
 .sourcePanel,
@@ -404,23 +392,9 @@ h2 {
   text-transform: uppercase;
 }
 
-.urlRow,
-.buttonRow {
-  display: flex;
+.browserForm {
+  display: grid;
   gap: 10px;
-}
-
-.urlRow {
-  margin-bottom: 10px;
-}
-
-.urlRow input {
-  min-width: 0;
-  flex: 1;
-}
-
-.buttonRow {
-  flex-wrap: wrap;
 }
 
 .status {
@@ -719,12 +693,11 @@ label {
 @media (max-width: 780px) {
   .sideNav,
   .workSurface,
-  .bottomGrid {
+  .focusView {
     grid-template-columns: 1fr;
   }
 
   .mainHeader,
-  .urlRow,
   .itemTitle {
     flex-direction: column;
     align-items: stretch;
