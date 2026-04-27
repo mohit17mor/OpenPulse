@@ -584,6 +584,7 @@ label {
 }
 
 .statePill.pending,
+.statePill.checking,
 .statePill.checked {
   color: var(--ink);
 }

@@ -379,7 +379,7 @@ function monitorSummary(monitor) {
 }
 
 function statusClass(status) {
-  return ["pending", "checked", "matched", "missing", "blocked", "error"].includes(status) ? status : "pending";
+  return ["pending", "checking", "checked", "matched", "missing", "blocked", "error"].includes(status) ? status : "pending";
 }
 
 function formatDateTime(value, fallback = "-") {

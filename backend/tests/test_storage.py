@@ -112,6 +112,25 @@ def test_database_lists_due_monitors(tmp_path):
     assert [monitor["id"] for monitor in due_monitors] == [due_monitor["id"]]
 
 
+def test_database_clamps_monitor_interval_to_five_seconds(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+
+    monitor = db.create_monitor(
+        {
+            "name": "Fast watch",
+            "url": "https://example.com/product",
+            "target": {"initialValue": "$129.00"},
+            "condition": {"type": "changed"},
+            "intervalSeconds": 1,
+            "enabled": True,
+        }
+    )
+
+    assert monitor["intervalSeconds"] == 5
+    assert db.get_monitor(monitor["id"])["intervalSeconds"] == 5
+
+
 def test_database_records_monitor_lifecycle_state(tmp_path):
     db = Database(tmp_path / "openpulse.db")
     db.initialize()
@@ -160,6 +179,39 @@ def test_database_records_monitor_lifecycle_state(tmp_path):
     assert recovered["lastDurationMs"] == 456
     assert recovered["lastValue"] == "$129.00"
     assert recovered["consecutiveFailures"] == 0
+
+
+def test_database_records_check_in_progress_state(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = db.create_monitor(
+        {
+            "name": "Price watch",
+            "url": "https://example.com/product",
+            "target": {"initialValue": "$129.00"},
+            "condition": {"type": "changed"},
+            "intervalSeconds": 30,
+            "enabled": True,
+        }
+    )
+
+    db.mark_check_started(monitor["id"])
+
+    checking = db.get_monitor(monitor["id"])
+    assert checking["lastStatus"] == "checking"
+    assert checking["checkStartedAt"] is not None
+    assert db.list_due_monitors() == []
+
+    db.record_check_result(
+        monitor["id"],
+        status="checked",
+        current_value="$129.00",
+        duration_ms=10,
+        error=None,
+    )
+    checked = db.get_monitor(monitor["id"])
+    assert checked["lastStatus"] == "checked"
+    assert checked["checkStartedAt"] is None
 
 
 def test_database_stores_script_seen_items_once(tmp_path):

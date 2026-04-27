@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
@@ -32,7 +32,7 @@ class MonitorRequest(BaseModel):
     url: str
     target: dict[str, Any]
     condition: dict[str, Any]
-    intervalSeconds: int = 300
+    intervalSeconds: int = Field(default=300, ge=5)
     enabled: bool = True
 
 
@@ -50,13 +50,19 @@ def create_app(
     extractor: Extractor | None = None,
     start_scheduler: bool = True,
     scheduler_poll_seconds: int = 5,
+    scheduler_max_concurrent_checks: int = 5,
 ) -> FastAPI:
     db = Database(db_path)
     db.initialize()
     browser_controller = browser or BrowserController()
     check_extractor = extractor or SessionFirstExtractor(browser_controller, PlaywrightExtractor())
     check_engine = CheckEngine(db, check_extractor)
-    scheduler = MonitorScheduler(db, check_engine, poll_seconds=scheduler_poll_seconds)
+    scheduler = MonitorScheduler(
+        db,
+        check_engine,
+        poll_seconds=scheduler_poll_seconds,
+        max_concurrent_checks=scheduler_max_concurrent_checks,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

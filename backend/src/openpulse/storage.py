@@ -48,7 +48,8 @@ class Database:
                     last_error text,
                     last_duration_ms integer,
                     last_value text,
-                    consecutive_failures integer not null default 0
+                    consecutive_failures integer not null default 0,
+                    check_started_at text
                 );
 
                 create table if not exists logs (
@@ -86,10 +87,20 @@ class Database:
             "last_duration_ms": "alter table monitors add column last_duration_ms integer",
             "last_value": "alter table monitors add column last_value text",
             "consecutive_failures": "alter table monitors add column consecutive_failures integer not null default 0",
+            "check_started_at": "alter table monitors add column check_started_at text",
         }
         for column, sql in migrations.items():
             if column not in columns:
                 conn.execute(sql)
+        conn.execute(
+            """
+            update monitors
+            set check_started_at = null,
+                last_status = 'error',
+                last_error = 'interrupted_check'
+            where check_started_at is not null
+            """
+        )
 
     def create_monitor(self, payload: dict[str, Any]) -> dict[str, Any]:
         created_at = payload.get("createdAt") or utc_now()
@@ -99,7 +110,7 @@ class Database:
             "url": payload["url"],
             "target": payload["target"],
             "condition": payload["condition"],
-            "intervalSeconds": int(payload.get("intervalSeconds") or 300),
+            "intervalSeconds": max(5, int(payload.get("intervalSeconds") or 300)),
             "enabled": bool(payload.get("enabled", True)),
             "createdAt": created_at,
             "lastCheckedAt": payload.get("lastCheckedAt"),
@@ -109,6 +120,7 @@ class Database:
             "lastDurationMs": payload.get("lastDurationMs"),
             "lastValue": payload.get("lastValue"),
             "consecutiveFailures": int(payload.get("consecutiveFailures") or 0),
+            "checkStartedAt": payload.get("checkStartedAt"),
         }
         with self.connect() as conn:
             conn.execute(
@@ -117,9 +129,9 @@ class Database:
                     id, name, url, target_json, condition_json,
                     interval_seconds, enabled, created_at, last_checked_at,
                     next_check_at, last_status, last_error, last_duration_ms,
-                    last_value, consecutive_failures
+                    last_value, consecutive_failures, check_started_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     monitor["id"],
@@ -137,6 +149,7 @@ class Database:
                     monitor["lastDurationMs"],
                     monitor["lastValue"],
                     monitor["consecutiveFailures"],
+                    monitor["checkStartedAt"],
                 ),
             )
         return monitor
@@ -151,6 +164,8 @@ class Database:
         due_monitors = []
         for monitor in self.list_monitors():
             if not monitor["enabled"]:
+                continue
+            if monitor.get("checkStartedAt") is not None:
                 continue
             next_check_at = monitor.get("nextCheckAt")
             if next_check_at is None:
@@ -181,6 +196,19 @@ class Database:
             duration_ms=None,
             error=None,
         )
+
+    def mark_check_started(self, monitor_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update monitors
+                set last_status = 'checking',
+                    last_error = null,
+                    check_started_at = ?
+                where id = ?
+                """,
+                (utc_now(), monitor_id),
+            )
 
     def record_check_result(
         self,
@@ -213,7 +241,8 @@ class Database:
                     last_error = ?,
                     last_duration_ms = ?,
                     last_value = ?,
-                    consecutive_failures = ?
+                    consecutive_failures = ?,
+                    check_started_at = null
                 where id = ?
                 """,
                 (
@@ -330,6 +359,7 @@ class Database:
             "lastDurationMs": row["last_duration_ms"],
             "lastValue": row["last_value"],
             "consecutiveFailures": row["consecutive_failures"],
+            "checkStartedAt": row["check_started_at"],
         }
 
     @staticmethod
