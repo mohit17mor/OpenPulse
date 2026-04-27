@@ -146,6 +146,7 @@
   function enable() {
     if (enabled) return;
     enabled = true;
+    notifyMonitorModeEnabled();
     candidates = getCandidates();
     visibleCandidates = candidates;
     render();
@@ -322,6 +323,19 @@
     disable();
   }
 
+  function notifyMonitorModeEnabled() {
+    if (!window.openPulseMonitorModeEnabled) return;
+    try {
+      const result = window.openPulseMonitorModeEnabled({
+        url: window.location.href,
+        enabledAt: new Date().toISOString()
+      });
+      if (result?.catch) result.catch(() => {});
+    } catch (_error) {
+      // Monitor mode can still work if the app binding is unavailable.
+    }
+  }
+
   document.addEventListener("keydown", (event) => {
     if (event.key.toLowerCase() !== "m" || event.metaKey || event.ctrlKey || event.altKey) return;
     const tag = document.activeElement?.tagName;
@@ -337,4 +351,3 @@
     filterCandidatesByRect
   };
 })();
-

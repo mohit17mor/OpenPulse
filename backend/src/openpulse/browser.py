@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,34 @@ from openpulse.checker import ExtractedValue
 ROOT = Path(__file__).resolve().parents[3]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
+_FOCUS_TRACKER_SCRIPT = """
+(() => {
+  if (window.__openPulseFocusTracker) return;
+  window.__openPulseFocusTracker = true;
+  const notify = () => {
+    if (!window.openPulsePageFocused) return;
+    window.openPulsePageFocused({
+      url: window.location.href,
+      visibilityState: document.visibilityState
+    });
+  };
+  window.addEventListener("focus", notify, true);
+  window.addEventListener("pageshow", notify, true);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") notify();
+  });
+  setTimeout(notify, 0);
+})();
+"""
+
+
+def _binding_page(source: Any) -> Page | None:
+    if isinstance(source, dict):
+        page = source.get("page")
+    else:
+        page = getattr(source, "page", None)
+    return page if page is not None else None
+
 
 class BrowserController:
     def __init__(self):
@@ -19,10 +48,21 @@ class BrowserController:
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
         self.page: Page | None = None
+        self._prepared_page_ids: set[int] = set()
+        self._internal_page_ids: set[int] = set()
+        self._ignore_new_pages = 0
+        self._bindings_exposed = False
         self.latest_selection: dict[str, Any] | None = None
 
     async def launch(self) -> dict[str, str]:
-        if self.page is not None:
+        if self.has_active_session():
+            self.page = self._latest_open_page()
+            if self.page is None and self.context is not None:
+                self.page = await self.context.new_page()
+                await self._prepare_page(self.page)
+                return {"status": "opened"}
+            if self.page is not None:
+                await self._prepare_page(self.page)
             return {"status": "already_open"}
         self.playwright = await async_playwright().start()
         try:
@@ -33,12 +73,16 @@ class BrowserController:
             viewport={"width": 1440, "height": 1000},
             bypass_csp=True,
         )
+        await self._expose_bindings()
+        await self.context.add_init_script(script=(STATIC_DIR / "overlay.js").read_text())
+        await self.context.add_init_script(script=_FOCUS_TRACKER_SCRIPT)
+        self.context.on("page", lambda page: self._schedule_prepare_page(page))
         self.page = await self.context.new_page()
-        await self._expose_bindings(self.page)
+        await self._prepare_page(self.page)
         return {"status": "opened"}
 
     def has_active_session(self) -> bool:
-        return self.context is not None and self.browser is not None
+        return self.context is not None and self.browser is not None and self.browser.is_connected()
 
     async def navigate(self, url: str) -> dict[str, str]:
         page = await self.ensure_page()
@@ -52,6 +96,7 @@ class BrowserController:
     async def enable_monitor_mode(self) -> dict[str, str]:
         page = await self.ensure_page()
         await self.inject_overlay(page)
+        await self._disable_monitor_mode_except(page)
         await page.evaluate("window.OpenPulseOverlay.enable()")
         return {"status": "monitor_mode_enabled"}
 
@@ -66,27 +111,121 @@ class BrowserController:
         self.browser = None
         self.context = None
         self.page = None
+        self._prepared_page_ids.clear()
+        self._internal_page_ids.clear()
+        self._ignore_new_pages = 0
+        self._bindings_exposed = False
 
     async def extract(self, url: str, target: dict[str, Any]) -> ExtractedValue:
         if self.context is None:
             return ExtractedValue(found=False, value=None, details={"reason": "no_browser_session"})
+        self._ignore_new_pages += 1
         page = await self.context.new_page()
+        self._internal_page_ids.add(id(page))
         try:
             return await extract_from_page(page, url, target, source="browser_session")
         finally:
             await page.close()
+            self._internal_page_ids.discard(id(page))
 
     async def ensure_page(self) -> Page:
+        if self.page is not None and not self.page.is_closed():
+            await self._prepare_page(self.page)
+            return self.page
+
+        self.page = self._latest_open_page()
+        if self.page is not None:
+            await self._prepare_page(self.page)
+            return self.page
+
+        if self.context is not None:
+            self.page = await self.context.new_page()
+            await self._prepare_page(self.page)
+            return self.page
+
         if self.page is None:
             await self.launch()
         assert self.page is not None
         return self.page
 
-    async def _expose_bindings(self, page: Page) -> None:
+    def _latest_open_page(self) -> Page | None:
+        if self.context is None:
+            return None
+        for page in reversed(self.context.pages):
+            if not page.is_closed():
+                return page
+        return None
+
+    def _schedule_prepare_page(self, page: Page) -> None:
+        activate = True
+        if self._ignore_new_pages > 0:
+            self._ignore_new_pages -= 1
+            activate = False
+            self._internal_page_ids.add(id(page))
+        if activate:
+            self._activate_page(page)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._prepare_page(page, activate=activate))
+
+    async def _prepare_page(self, page: Page, *, activate: bool = True) -> None:
+        if page.is_closed():
+            return
+        if activate:
+            self._activate_page(page)
+        page_id = id(page)
+        if page_id not in self._prepared_page_ids:
+            self._prepared_page_ids.add(page_id)
+            page.on("close", lambda _page: self._handle_page_closed(page))
+
+    def _handle_page_closed(self, closed_page: Page) -> None:
+        self._prepared_page_ids.discard(id(closed_page))
+        self._internal_page_ids.discard(id(closed_page))
+        if self.page is closed_page:
+            self.page = self._latest_open_page()
+
+    def _activate_page(self, page: Page) -> None:
+        if page.is_closed() or id(page) in self._internal_page_ids:
+            return
+        self.page = page
+
+    async def _disable_monitor_mode_except(self, active_page: Page) -> None:
+        if self.context is None:
+            return
+        for page in self.context.pages:
+            if page is active_page or page.is_closed() or id(page) in self._internal_page_ids:
+                continue
+            with suppress(Exception):
+                await page.evaluate("window.OpenPulseOverlay?.disable?.()")
+
+    async def _expose_bindings(self) -> None:
+        if self.context is None or self._bindings_exposed:
+            return
+
         async def selection_binding(_source: Any, selection: dict[str, Any]) -> None:
+            page = _binding_page(_source)
+            if page is not None:
+                self._activate_page(page)
             self.latest_selection = selection
 
-        await page.expose_binding("openPulseSelectCandidate", selection_binding)
+        async def focus_binding(_source: Any, _payload: dict[str, Any] | None = None) -> None:
+            page = _binding_page(_source)
+            if page is not None:
+                self._activate_page(page)
+
+        async def monitor_mode_binding(_source: Any, _payload: dict[str, Any] | None = None) -> None:
+            page = _binding_page(_source)
+            if page is None:
+                return
+            self._activate_page(page)
+            await self._disable_monitor_mode_except(page)
+
+        await self.context.expose_binding("openPulseSelectCandidate", selection_binding)
+        await self.context.expose_binding("openPulsePageFocused", focus_binding)
+        await self.context.expose_binding("openPulseMonitorModeEnabled", monitor_mode_binding)
+        self._bindings_exposed = True
 
     async def inject_overlay(self, page: Page) -> None:
         overlay_path = STATIC_DIR / "overlay.js"
