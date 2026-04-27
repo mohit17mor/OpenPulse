@@ -112,6 +112,56 @@ def test_database_lists_due_monitors(tmp_path):
     assert [monitor["id"] for monitor in due_monitors] == [due_monitor["id"]]
 
 
+def test_database_records_monitor_lifecycle_state(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = db.create_monitor(
+        {
+            "name": "Price watch",
+            "url": "https://example.com/product",
+            "target": {"initialValue": "$129.00"},
+            "condition": {"type": "changed"},
+            "intervalSeconds": 30,
+            "enabled": True,
+        }
+    )
+
+    created = db.get_monitor(monitor["id"])
+    assert created["nextCheckAt"] is not None
+    assert created["lastStatus"] == "pending"
+    assert created["consecutiveFailures"] == 0
+
+    db.record_check_result(
+        monitor["id"],
+        status="missing",
+        current_value=None,
+        duration_ms=1234,
+        error="target_missing",
+    )
+    failed = db.get_monitor(monitor["id"])
+    assert failed["lastCheckedAt"] is not None
+    assert failed["nextCheckAt"] is not None
+    assert failed["lastStatus"] == "missing"
+    assert failed["lastError"] == "target_missing"
+    assert failed["lastDurationMs"] == 1234
+    assert failed["lastValue"] is None
+    assert failed["consecutiveFailures"] == 1
+
+    db.record_check_result(
+        monitor["id"],
+        status="checked",
+        current_value="$129.00",
+        duration_ms=456,
+        error=None,
+    )
+    recovered = db.get_monitor(monitor["id"])
+    assert recovered["lastStatus"] == "checked"
+    assert recovered["lastError"] is None
+    assert recovered["lastDurationMs"] == 456
+    assert recovered["lastValue"] == "$129.00"
+    assert recovered["consecutiveFailures"] == 0
+
+
 def test_database_stores_script_seen_items_once(tmp_path):
     db = Database(tmp_path / "openpulse.db")
     db.initialize()

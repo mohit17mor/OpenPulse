@@ -12,6 +12,13 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _parse_iso(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
 class Database:
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -35,7 +42,13 @@ class Database:
                     interval_seconds integer not null default 300,
                     enabled integer not null default 1,
                     created_at text not null,
-                    last_checked_at text
+                    last_checked_at text,
+                    next_check_at text,
+                    last_status text not null default 'pending',
+                    last_error text,
+                    last_duration_ms integer,
+                    last_value text,
+                    consecutive_failures integer not null default 0
                 );
 
                 create table if not exists logs (
@@ -61,8 +74,25 @@ class Database:
                 );
                 """
             )
+            self._ensure_monitor_lifecycle_columns(conn)
+
+    @staticmethod
+    def _ensure_monitor_lifecycle_columns(conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("pragma table_info(monitors)").fetchall()}
+        migrations = {
+            "next_check_at": "alter table monitors add column next_check_at text",
+            "last_status": "alter table monitors add column last_status text not null default 'pending'",
+            "last_error": "alter table monitors add column last_error text",
+            "last_duration_ms": "alter table monitors add column last_duration_ms integer",
+            "last_value": "alter table monitors add column last_value text",
+            "consecutive_failures": "alter table monitors add column consecutive_failures integer not null default 0",
+        }
+        for column, sql in migrations.items():
+            if column not in columns:
+                conn.execute(sql)
 
     def create_monitor(self, payload: dict[str, Any]) -> dict[str, Any]:
+        created_at = payload.get("createdAt") or utc_now()
         monitor = {
             "id": payload.get("id") or str(uuid4()),
             "name": payload["name"],
@@ -71,17 +101,25 @@ class Database:
             "condition": payload["condition"],
             "intervalSeconds": int(payload.get("intervalSeconds") or 300),
             "enabled": bool(payload.get("enabled", True)),
-            "createdAt": payload.get("createdAt") or utc_now(),
+            "createdAt": created_at,
             "lastCheckedAt": payload.get("lastCheckedAt"),
+            "nextCheckAt": payload.get("nextCheckAt") or created_at,
+            "lastStatus": payload.get("lastStatus") or "pending",
+            "lastError": payload.get("lastError"),
+            "lastDurationMs": payload.get("lastDurationMs"),
+            "lastValue": payload.get("lastValue"),
+            "consecutiveFailures": int(payload.get("consecutiveFailures") or 0),
         }
         with self.connect() as conn:
             conn.execute(
                 """
                 insert into monitors (
                     id, name, url, target_json, condition_json,
-                    interval_seconds, enabled, created_at, last_checked_at
+                    interval_seconds, enabled, created_at, last_checked_at,
+                    next_check_at, last_status, last_error, last_duration_ms,
+                    last_value, consecutive_failures
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     monitor["id"],
@@ -93,6 +131,12 @@ class Database:
                     1 if monitor["enabled"] else 0,
                     monitor["createdAt"],
                     monitor["lastCheckedAt"],
+                    monitor["nextCheckAt"],
+                    monitor["lastStatus"],
+                    monitor["lastError"],
+                    monitor["lastDurationMs"],
+                    monitor["lastValue"],
+                    monitor["consecutiveFailures"],
                 ),
             )
         return monitor
@@ -108,14 +152,18 @@ class Database:
         for monitor in self.list_monitors():
             if not monitor["enabled"]:
                 continue
-            last_checked_at = monitor["lastCheckedAt"]
-            if last_checked_at is None:
-                due_monitors.append(monitor)
+            next_check_at = monitor.get("nextCheckAt")
+            if next_check_at is None:
+                last_checked_at = monitor["lastCheckedAt"]
+                if last_checked_at is None:
+                    due_monitors.append(monitor)
+                    continue
+                last_checked = _parse_iso(last_checked_at)
+                if current_time - last_checked >= timedelta(seconds=monitor["intervalSeconds"]):
+                    due_monitors.append(monitor)
                 continue
-            last_checked = datetime.fromisoformat(last_checked_at)
-            if last_checked.tzinfo is None:
-                last_checked = last_checked.replace(tzinfo=UTC)
-            if current_time - last_checked >= timedelta(seconds=monitor["intervalSeconds"]):
+            next_check = _parse_iso(next_check_at)
+            if next_check <= current_time:
                 due_monitors.append(monitor)
         due_monitors.sort(key=lambda item: item["createdAt"])
         return due_monitors
@@ -126,10 +174,58 @@ class Database:
         return self._monitor_from_row(row) if row else None
 
     def mark_checked(self, monitor_id: str) -> None:
+        self.record_check_result(
+            monitor_id,
+            status="checked",
+            current_value=None,
+            duration_ms=None,
+            error=None,
+        )
+
+    def record_check_result(
+        self,
+        monitor_id: str,
+        *,
+        status: str,
+        current_value: str | None,
+        duration_ms: int | None,
+        error: str | None,
+    ) -> None:
+        checked_at = utc_now()
+        failure_statuses = {"missing", "blocked", "error"}
         with self.connect() as conn:
+            row = conn.execute(
+                "select interval_seconds, consecutive_failures from monitors where id = ?",
+                (monitor_id,),
+            ).fetchone()
+            if row is None:
+                return
+            next_check_at = (_parse_iso(checked_at) + timedelta(seconds=row["interval_seconds"])).isoformat()
+            consecutive_failures = (
+                int(row["consecutive_failures"] or 0) + 1 if status in failure_statuses else 0
+            )
             conn.execute(
-                "update monitors set last_checked_at = ? where id = ?",
-                (utc_now(), monitor_id),
+                """
+                update monitors
+                set last_checked_at = ?,
+                    next_check_at = ?,
+                    last_status = ?,
+                    last_error = ?,
+                    last_duration_ms = ?,
+                    last_value = ?,
+                    consecutive_failures = ?
+                where id = ?
+                """,
+                (
+                    checked_at,
+                    next_check_at,
+                    status,
+                    error,
+                    duration_ms,
+                    current_value,
+                    consecutive_failures,
+                    monitor_id,
+                ),
             )
 
     def update_monitor_target(self, monitor_id: str, target: dict[str, Any]) -> None:
@@ -228,6 +324,12 @@ class Database:
             "enabled": bool(row["enabled"]),
             "createdAt": row["created_at"],
             "lastCheckedAt": row["last_checked_at"],
+            "nextCheckAt": row["next_check_at"],
+            "lastStatus": row["last_status"],
+            "lastError": row["last_error"],
+            "lastDurationMs": row["last_duration_ms"],
+            "lastValue": row["last_value"],
+            "consecutiveFailures": row["consecutive_failures"],
         }
 
     @staticmethod

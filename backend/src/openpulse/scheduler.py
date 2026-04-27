@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from time import perf_counter
 from typing import Any
 
 from openpulse.checker import CheckEngine
@@ -42,6 +43,7 @@ class MonitorScheduler:
         async with self._lock:
             results = []
             for monitor in self.db.list_due_monitors():
+                check_started = perf_counter()
                 try:
                     results.append(await self.check_engine.run_check(monitor["id"]))
                 except Exception as exc:
@@ -56,6 +58,11 @@ class MonitorScheduler:
                             "details": {"error": str(exc)},
                         }
                     )
-                    self.db.mark_checked(monitor["id"])
+                    self.db.record_check_result(
+                        monitor["id"],
+                        status="error",
+                        current_value=None,
+                        duration_ms=max(0, round((perf_counter() - check_started) * 1000)),
+                        error="scheduled_check_failed",
+                    )
             return results
-

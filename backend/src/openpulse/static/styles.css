@@ -588,6 +588,89 @@ label {
   overflow-wrap: anywhere;
 }
 
+.stateRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.statePill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  padding: 3px 9px;
+  text-transform: capitalize;
+}
+
+.statePill.pending,
+.statePill.checked {
+  color: var(--ink);
+}
+
+.statePill.matched {
+  border-color: #a7dbc8;
+  background: #f0fbf6;
+  color: #057a55;
+}
+
+.statePill.missing,
+.statePill.blocked,
+.statePill.warning {
+  border-color: #ead2aa;
+  background: #fff8ed;
+  color: var(--warning);
+}
+
+.statePill.error {
+  border-color: #e6b9bf;
+  background: #fff5f5;
+  color: var(--danger);
+}
+
+.statePill.disabled {
+  background: var(--surface-soft);
+  color: var(--faint);
+}
+
+.stateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.stateGrid div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 9px 10px;
+}
+
+.stateGrid span {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.stateGrid strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
 .subtle {
   color: var(--muted);
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any, Protocol
 
 from openpulse.conditions import evaluate_condition
@@ -26,12 +27,13 @@ class CheckEngine:
         self.extractor = extractor
 
     async def run_check(self, monitor_id: str) -> dict[str, Any]:
+        check_started = perf_counter()
         monitor = self.db.get_monitor(monitor_id)
         if monitor is None:
             raise ValueError(f"Monitor not found: {monitor_id}")
 
         if monitor["target"].get("sourceType") == "script":
-            return await self._run_script_check(monitor)
+            return await self._run_script_check(monitor, check_started)
 
         if self.extractor is None:
             raise ValueError("Website extractor is not configured")
@@ -65,10 +67,10 @@ class CheckEngine:
                 "details": extracted.details,
             }
         )
-        self.db.mark_checked(monitor_id)
+        self._record_lifecycle(monitor_id, status, extracted.value, check_started, message)
         return log
 
-    async def _run_script_check(self, monitor: dict[str, Any]) -> dict[str, Any]:
+    async def _run_script_check(self, monitor: dict[str, Any], check_started: float) -> dict[str, Any]:
         target = monitor["target"]
         selection = target.get("selection") or {}
         preview = await run_script_preview(target["script"])
@@ -86,13 +88,13 @@ class CheckEngine:
                     "details": {"execution": preview.get("execution")},
                 }
             )
-            self.db.mark_checked(monitor_id)
+            self._record_lifecycle(monitor_id, log["status"], None, check_started, log["message"])
             return log
 
         try:
             if selection.get("mode") == "items":
-                return self._run_script_items_check(monitor, preview)
-            return self._run_script_scalar_check(monitor, preview)
+                return self._run_script_items_check(monitor, preview, check_started)
+            return self._run_script_scalar_check(monitor, preview, check_started)
         except ScriptOutputError as exc:
             log = self.db.create_log(
                 {
@@ -105,10 +107,15 @@ class CheckEngine:
                     "details": {"error": str(exc), "execution": preview.get("execution")},
                 }
             )
-            self.db.mark_checked(monitor_id)
+            self._record_lifecycle(monitor_id, log["status"], None, check_started, log["message"])
             return log
 
-    def _run_script_scalar_check(self, monitor: dict[str, Any], preview: dict[str, Any]) -> dict[str, Any]:
+    def _run_script_scalar_check(
+        self,
+        monitor: dict[str, Any],
+        preview: dict[str, Any],
+        check_started: float,
+    ) -> dict[str, Any]:
         target = monitor["target"]
         selection = target.get("selection") or {}
         previous_value = selection.get("initialValue")
@@ -133,10 +140,15 @@ class CheckEngine:
         )
         target.setdefault("selection", {})["initialValue"] = current_value
         self.db.update_monitor_target(monitor["id"], target)
-        self.db.mark_checked(monitor["id"])
+        self._record_lifecycle(monitor["id"], status, current_value, check_started, log["message"])
         return log
 
-    def _run_script_items_check(self, monitor: dict[str, Any], preview: dict[str, Any]) -> dict[str, Any]:
+    def _run_script_items_check(
+        self,
+        monitor: dict[str, Any],
+        preview: dict[str, Any],
+        check_started: float,
+    ) -> dict[str, Any]:
         selection = monitor["target"].get("selection") or {}
         items = extract_items(preview, selection)
         seen_ids = self.db.list_script_seen_item_ids(monitor["id"])
@@ -154,7 +166,7 @@ class CheckEngine:
                     "details": {"itemCount": len(items), "selection": selection},
                 }
             )
-            self.db.mark_checked(monitor["id"])
+            self._record_lifecycle(monitor["id"], "checked", str(len(items)), check_started, log["message"])
             return log
 
         new_items = [item for item in items if item["id"] not in seen_ids]
@@ -170,7 +182,7 @@ class CheckEngine:
                     "details": {"itemCount": len(items), "selection": selection},
                 }
             )
-            self.db.mark_checked(monitor["id"])
+            self._record_lifecycle(monitor["id"], "checked", str(len(items)), check_started, log["message"])
             return log
 
         logs = []
@@ -194,7 +206,7 @@ class CheckEngine:
                 )
             )
         self.db.add_script_seen_items(monitor["id"], new_items)
-        self.db.mark_checked(monitor["id"])
+        self._record_lifecycle(monitor["id"], "matched", str(len(new_items)), check_started, "new_items_detected")
         return {
             "status": "matched",
             "message": "new_items_detected",
@@ -202,6 +214,23 @@ class CheckEngine:
             "currentValue": str(len(new_items)),
             "details": {"newItemCount": len(new_items), "logs": logs},
         }
+
+    def _record_lifecycle(
+        self,
+        monitor_id: str,
+        status: str,
+        current_value: str | None,
+        check_started: float,
+        message: str | None,
+    ) -> None:
+        error = message if status in {"missing", "blocked", "error"} else None
+        self.db.record_check_result(
+            monitor_id,
+            status=status,
+            current_value=current_value,
+            duration_ms=max(0, round((perf_counter() - check_started) * 1000)),
+            error=error,
+        )
 
 
 def _item_field(item: dict[str, Any], field: str | None) -> Any:

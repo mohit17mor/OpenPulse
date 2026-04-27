@@ -43,6 +43,12 @@ async def test_check_engine_logs_matched_condition(tmp_path):
     assert logs[0]["conditionMatched"] is True
     assert logs[0]["currentValue"] == "$89.00"
     assert logs[0]["message"] == "number_less_than"
+    updated = db.get_monitor(monitor["id"])
+    assert updated["lastStatus"] == "matched"
+    assert updated["lastValue"] == "$89.00"
+    assert updated["lastDurationMs"] >= 0
+    assert updated["nextCheckAt"] is not None
+    assert updated["consecutiveFailures"] == 0
 
 
 async def test_check_engine_logs_missing_target(tmp_path):
@@ -57,6 +63,10 @@ async def test_check_engine_logs_missing_target(tmp_path):
     assert result["status"] == "missing"
     assert logs[0]["conditionMatched"] is False
     assert logs[0]["message"] == "target_missing"
+    updated = db.get_monitor(monitor["id"])
+    assert updated["lastStatus"] == "missing"
+    assert updated["lastError"] == "target_missing"
+    assert updated["consecutiveFailures"] == 1
 
 
 async def test_check_engine_logs_security_verification_as_blocked(tmp_path):
@@ -79,4 +89,3 @@ async def test_check_engine_logs_security_verification_as_blocked(tmp_path):
     logs = db.list_logs()
     assert result["status"] == "blocked"
     assert logs[0]["message"] == "security_verification"
-

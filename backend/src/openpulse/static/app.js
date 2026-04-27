@@ -283,9 +283,32 @@ function renderMonitors() {
               <button class="danger" data-delete-monitor="${monitor.id}">Delete</button>
             </span>
           </div>
+          <div class="stateRow">
+            <span class="statePill ${escapeHtml(statusClass(monitor.lastStatus))}">${escapeHtml(monitor.lastStatus || "pending")}</span>
+            ${monitor.enabled ? "" : '<span class="statePill disabled">disabled</span>'}
+            ${monitor.consecutiveFailures > 0 ? `<span class="statePill warning">${monitor.consecutiveFailures} failures</span>` : ""}
+          </div>
           <div class="itemMeta">${escapeHtml(monitorSummary(monitor))}</div>
           <div class="itemMeta">Condition: ${escapeHtml(JSON.stringify(monitor.condition))}</div>
-          <div class="itemMeta">Interval: ${monitor.intervalSeconds}s · Last checked: ${monitor.lastCheckedAt ? new Date(monitor.lastCheckedAt).toLocaleString() : "not yet"}</div>
+          <div class="stateGrid">
+            <div>
+              <span>Last checked</span>
+              <strong>${escapeHtml(formatDateTime(monitor.lastCheckedAt, "Not yet"))}</strong>
+            </div>
+            <div>
+              <span>Next check</span>
+              <strong>${escapeHtml(monitor.enabled ? formatRelativeTime(monitor.nextCheckAt) : "Disabled")}</strong>
+            </div>
+            <div>
+              <span>Last value</span>
+              <strong>${escapeHtml(monitor.lastValue || "-")}</strong>
+            </div>
+            <div>
+              <span>Duration</span>
+              <strong>${escapeHtml(formatDuration(monitor.lastDurationMs))}</strong>
+            </div>
+          </div>
+          ${monitor.lastError ? `<div class="itemMeta error">Reason: ${escapeHtml(monitor.lastError)}</div>` : ""}
         </article>
       `
     )
@@ -322,6 +345,33 @@ function monitorSummary(monitor) {
     return `Watching script value: ${selection.path || "full output"}`;
   }
   return `Watching ${monitor.target?.semanticType || "selected target"} on ${monitor.url}`;
+}
+
+function statusClass(status) {
+  return ["pending", "checked", "matched", "missing", "blocked", "error"].includes(status) ? status : "pending";
+}
+
+function formatDateTime(value, fallback = "-") {
+  if (!value) return fallback;
+  return new Date(value).toLocaleString();
+}
+
+function formatRelativeTime(value) {
+  if (!value) return "Not scheduled";
+  const diffMs = new Date(value).getTime() - Date.now();
+  const absSeconds = Math.max(0, Math.round(Math.abs(diffMs) / 1000));
+  if (diffMs <= 0) return "Due now";
+  if (absSeconds < 60) return `in ${absSeconds}s`;
+  const minutes = Math.round(absSeconds / 60);
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return `in ${hours}h`;
+}
+
+function formatDuration(value) {
+  if (value === null || value === undefined) return "-";
+  if (value < 1000) return `${value}ms`;
+  return `${(value / 1000).toFixed(1)}s`;
 }
 
 function renderLogs() {
