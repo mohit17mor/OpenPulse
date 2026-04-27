@@ -4,72 +4,109 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenPulse</title>
-    <link rel="stylesheet" href="/static/styles.css?v=script-preview-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=professional-ui-1" />
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
+    <main class="appShell">
+      <header class="topBar">
+        <div class="brand">
+          <div class="brandMark">OP</div>
+          <div>
+            <div class="brandName">OpenPulse</div>
+            <div class="brandSub">Local monitor console</div>
+          </div>
+        </div>
+        <div class="topMeta">
+          <span class="healthDot"></span>
+          Backend online
+        </div>
+      </header>
+
+      <section class="workspaceHeader">
         <div>
-          <p class="eyebrow">OpenPulse MVP</p>
-          <h1>Turn websites and scripts into monitored signals.</h1>
-          <p class="subtle">
-            Select a visible website fact, or run a local script and choose the output field or item list to monitor.
-          </p>
+          <p class="eyebrow">Create monitor</p>
+          <h1>Choose a source, preview the signal, save the rule.</h1>
         </div>
-      </section>
-
-      <section class="panel sourcePanel">
-        <h2>New Monitor</h2>
         <div class="segmented" role="tablist" aria-label="Monitor source">
-          <button id="websiteSourceButton" class="active" type="button">Website</button>
-          <button id="scriptSourceButton" type="button">Script</button>
+          <button id="websiteSourceButton" class="active" type="button">
+            <span>Website</span>
+            <small>visual page picker</small>
+          </button>
+          <button id="scriptSourceButton" type="button">
+            <span>Script</span>
+            <small>local data output</small>
+          </button>
         </div>
       </section>
 
-      <section class="grid">
-        <div id="websitePanel" class="panel">
-          <h2>Browser</h2>
-          <div class="row">
-            <input id="urlInput" type="url" value="http://127.0.0.1:8000/fixtures/product.html" aria-label="URL" />
-            <button id="launchButton">Launch</button>
-            <button id="navigateButton">Navigate</button>
+      <section class="setupGrid">
+        <div class="setupColumn">
+          <div id="websitePanel" class="panel setupPanel">
+            <div class="panelHeader">
+              <div>
+                <p class="panelKicker">Website source</p>
+                <h2>Open a page and select what changes</h2>
+              </div>
+            </div>
+            <div class="urlRow">
+              <input id="urlInput" type="url" value="http://127.0.0.1:8000/fixtures/product.html" aria-label="URL" />
+              <button id="launchButton" class="secondary">Launch browser</button>
+              <button id="navigateButton">Go</button>
+            </div>
+            <div class="buttonRow">
+              <button id="monitorModeButton" type="button">Select on page</button>
+              <button id="clearSelectionButton" class="ghost" type="button">Clear</button>
+            </div>
+            <p id="browserStatus" class="status">Launch Chromium, open a page, then press M or use Select on page.</p>
           </div>
-          <div class="row">
-            <button id="monitorModeButton">Enable Monitor Mode</button>
-            <button id="clearSelectionButton">Clear Selection</button>
+
+          <div id="scriptPanel" class="panel setupPanel hidden">
+            <div class="panelHeader">
+              <div>
+                <p class="panelKicker">Script source</p>
+                <h2>Run a local script and preview its output</h2>
+              </div>
+            </div>
+            <div class="scriptForm">
+              <label>
+                Program
+                <input id="scriptCommand" type="text" value="python3" />
+              </label>
+              <label>
+                Script or inputs
+                <textarea id="scriptArgs" rows="4" placeholder="/Users/mmor/scripts/feed.py"></textarea>
+              </label>
+              <label>
+                Run from folder
+                <input id="scriptCwd" type="text" placeholder="/Users/mmor/scripts" />
+              </label>
+              <label>
+                Stop after
+                <input id="scriptTimeout" type="number" min="1" value="10" />
+              </label>
+              <button id="runScriptPreviewButton" type="button">Run preview</button>
+            </div>
+            <div class="starterBox">
+              <div>
+                <div class="starterTitle">Starter script folder</div>
+                <code>/Users/mmor/scratch/openpulse/sample-scripts</code>
+              </div>
+              <span>empty</span>
+            </div>
+            <p id="scriptStatus" class="status">Run a script, then choose the value or list OpenPulse should watch.</p>
           </div>
-          <p id="browserStatus" class="status">Launch Chromium, navigate, then press M in the browser window.</p>
         </div>
 
-        <div id="scriptPanel" class="panel hidden">
-          <h2>Script</h2>
-          <div class="form">
-            <label>
-              Command
-              <input id="scriptCommand" type="text" value="python3" />
-            </label>
-            <label>
-              Arguments
-              <textarea id="scriptArgs" rows="3" placeholder="/Users/mmor/scripts/feed.py"></textarea>
-            </label>
-            <label>
-              Working directory
-              <input id="scriptCwd" type="text" placeholder="/Users/mmor/scripts" />
-            </label>
-            <label>
-              Timeout seconds
-              <input id="scriptTimeout" type="number" min="1" value="10" />
-            </label>
-            <button id="runScriptPreviewButton" type="button">Run Preview</button>
+        <div class="panel targetPanel">
+          <div class="panelHeader">
+            <div>
+              <p class="panelKicker">Preview and rule</p>
+              <h2>Pick the signal to watch</h2>
+            </div>
           </div>
-          <p id="scriptStatus" class="status">Run a script, then select a scalar value or JSON item list from its output.</p>
-        </div>
-
-        <div class="panel">
-          <h2>Selected Target</h2>
           <pre id="selectionPreview" class="preview">No target selected yet.</pre>
           <div id="scriptOutputPicker" class="scriptOutput hidden"></div>
-          <form id="monitorForm" class="form">
+          <form id="monitorForm" class="ruleForm">
             <label>
               Monitor name
               <input id="monitorName" type="text" value="Price watch" />
@@ -94,29 +131,35 @@
               Check interval seconds
               <input id="intervalSeconds" type="number" min="30" value="300" />
             </label>
-            <button type="submit">Save Monitor</button>
+            <button type="submit" class="saveButton">Save monitor</button>
           </form>
         </div>
       </section>
 
-      <section class="grid">
+      <section class="activityGrid">
         <div class="panel">
           <div class="panelHeader">
-            <h2>Monitors</h2>
-            <button id="refreshMonitorsButton">Refresh</button>
+            <div>
+              <p class="panelKicker">Saved</p>
+              <h2>Monitors</h2>
+            </div>
+            <button id="refreshMonitorsButton" class="ghost">Refresh</button>
           </div>
           <div id="monitorsList" class="list"></div>
         </div>
 
         <div class="panel">
           <div class="panelHeader">
-            <h2>Logs</h2>
-            <button id="refreshLogsButton">Refresh</button>
+            <div>
+              <p class="panelKicker">Recent</p>
+              <h2>Events</h2>
+            </div>
+            <button id="refreshLogsButton" class="ghost">Refresh</button>
           </div>
           <div id="logsList" class="list"></div>
         </div>
       </section>
     </main>
-    <script type="module" src="/static/app.js?v=script-preview-2"></script>
+    <script type="module" src="/static/app.js?v=professional-ui-1"></script>
   </body>
 </html>

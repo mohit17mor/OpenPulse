@@ -316,11 +316,12 @@ function monitorSummary(monitor) {
   if (monitor.target?.sourceType === "script") {
     const selection = monitor.target.selection || {};
     if (selection.mode === "items") {
-      return `Script: new items in ${selection.arrayPath} by ${selection.idField}`;
+      const source = selection.arrayPath === "$" ? "script output" : `${selection.arrayPath}`;
+      return `Watching for new items in ${source}. Recognizes items by ${selection.idField}.`;
     }
-    return `Script: ${selection.path || "$stdout"}`;
+    return `Watching script value: ${selection.path || "full output"}`;
   }
-  return `Website: ${monitor.url} · ${monitor.target?.semanticType || "target"}: ${monitor.target?.initialValue || ""}`;
+  return `Watching ${monitor.target?.semanticType || "selected target"} on ${monitor.url}`;
 }
 
 function renderLogs() {
