@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>OpenPulse Sample Feed</title>
+    <link>https://example.com/openpulse</link>
+    <description>Local sample feed for OpenPulse item-list monitors.</description>
+    <item>
+      <title>Sample release note</title>
+      <link>https://example.com/openpulse/release-note</link>
+      <guid>sample-release-note</guid>
+    </item>
+    <item>
+      <title>Sample incident update</title>
+      <link>https://example.com/openpulse/incident-update</link>
+      <guid>sample-incident-update</guid>
+    </item>
+  </channel>
+</rss>

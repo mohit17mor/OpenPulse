@@ -4,6 +4,7 @@ const state = {
   selection: null,
   scriptPreview: null,
   scriptSelection: null,
+  sampleMonitors: [],
   monitors: [],
   logs: []
 };
@@ -31,16 +32,23 @@ function setView(view) {
   state.view = view;
   const createViewActive = view === "website" || view === "script";
   $("createView").classList.toggle("hidden", !createViewActive);
+  $("samplesView").classList.toggle("hidden", view !== "samples");
   $("monitorsView").classList.toggle("hidden", view !== "monitors");
   $("logsView").classList.toggle("hidden", view !== "logs");
 
   $("websiteSourceButton").classList.toggle("active", view === "website");
   $("scriptSourceButton").classList.toggle("active", view === "script");
+  $("samplesViewButton").classList.toggle("active", view === "samples");
   $("monitorsViewButton").classList.toggle("active", view === "monitors");
   $("logsViewButton").classList.toggle("active", view === "logs");
 
   if (view === "website" || view === "script") {
     setSource(view);
+  } else if (view === "samples") {
+    $("mainCrumb").textContent = "Create";
+    $("mainTitle").textContent = "Sample monitors";
+    $("mainSubtitle").textContent = "Start from a working monitor template, then edit and save it.";
+    refreshSamples();
   } else if (view === "monitors") {
     $("mainCrumb").textContent = "Workspace";
     $("mainTitle").textContent = "Saved monitors";
@@ -122,7 +130,9 @@ function renderSelection() {
     } else if (state.scriptPreview && !state.scriptPreview.ok) {
       $("selectionPreview").textContent = state.scriptPreview.execution?.stderr || state.scriptPreview.error || "Script preview failed.";
     } else {
-      $("selectionPreview").textContent = "Run a script preview to see the full output here.";
+      $("selectionPreview").textContent = state.scriptSelection
+        ? scriptSelectionSummary()
+        : "Run a script preview to see the full output here.";
     }
     renderScriptOutputPicker();
     return;
@@ -257,6 +267,45 @@ function selectScriptNode(index) {
   renderSelection();
 }
 
+function selectionWithPreviewNode(selection, preview) {
+  if (!selection || !preview?.ok) return null;
+  if (selection.mode === "items") {
+    const index = preview.nodes.findIndex((node) => node.kind === "array" && node.path === selection.arrayPath);
+    return index >= 0 ? { ...selection, nodeIndex: index } : null;
+  }
+  const index = preview.nodes.findIndex((node) => node.kind === "scalar" && node.path === selection.path);
+  if (index < 0) return null;
+  const node = preview.nodes[index];
+  return {
+    ...selection,
+    nodeIndex: index,
+    initialValue: String(node.value),
+    valueType: node.valueType
+  };
+}
+
+function scriptSelectionSummary() {
+  if (!state.scriptSelection) return "";
+  if (state.scriptSelection.mode === "items") {
+    return [
+      "Sample item-list selection loaded.",
+      `Array path: ${state.scriptSelection.arrayPath}`,
+      `ID field: ${state.scriptSelection.idField}`,
+      `Display field: ${state.scriptSelection.displayField || "-"}`,
+      `URL field: ${state.scriptSelection.urlField || "-"}`,
+      "",
+      "Run preview to inspect the current output before saving."
+    ].join("\n");
+  }
+  return [
+    "Sample scalar selection loaded.",
+    `Path: ${state.scriptSelection.path || "$stdout"}`,
+    `Output type: ${state.scriptSelection.outputType || "json"}`,
+    "",
+    "Run preview to inspect the current output before saving."
+  ].join("\n");
+}
+
 function preferredField(fields, candidates) {
   const lowerToOriginal = new Map(fields.map((field) => [field.toLowerCase(), field]));
   for (const candidate of candidates) {
@@ -295,6 +344,71 @@ function scriptBaselineItems() {
 function getPath(value, path) {
   if (!path || path === "$") return value;
   return path.split(".").reduce((current, part) => current && current[part], value);
+}
+
+function renderSamples() {
+  const container = $("samplesList");
+  if (state.sampleMonitors.length === 0) {
+    container.innerHTML = '<p class="subtle">No sample monitors found.</p>';
+    return;
+  }
+  container.innerHTML = state.sampleMonitors
+    .map(
+      (sample) => `
+        <article class="sampleCard">
+          <div>
+            <div class="sampleCategory">${escapeHtml(sample.category || "Sample")}</div>
+            <h3>${escapeHtml(sample.name)}</h3>
+            <p>${escapeHtml(sample.description)}</p>
+          </div>
+          <div class="sampleMeta">
+            <span>${escapeHtml(sample.selection?.mode === "items" ? "new items" : sample.selection?.path || "value")}</span>
+            <span>${escapeHtml(conditionLabel(sample.condition))}</span>
+            <span>${escapeHtml(`${sample.intervalSeconds || 300}s`)}</span>
+          </div>
+          <button type="button" data-use-sample="${escapeHtml(sample.id)}">Use sample</button>
+        </article>
+      `
+    )
+    .join("");
+  container.querySelectorAll("[data-use-sample]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sample = state.sampleMonitors.find((item) => item.id === button.dataset.useSample);
+      if (sample) applySampleMonitor(sample);
+    });
+  });
+}
+
+function conditionLabel(condition) {
+  if (!condition) return "condition";
+  if (condition.type === "new_item") return "new item appears";
+  if (condition.value === undefined || condition.value === null || condition.value === "") return condition.type;
+  return `${condition.type.replaceAll("_", " ")} ${condition.value}`;
+}
+
+function applySampleMonitor(sample) {
+  const script = sample.script || {};
+  state.scriptPreview = null;
+  state.scriptSelection = { ...(sample.selection || {}) };
+  $("scriptCommand").value = script.command || "python3";
+  $("scriptArgs").value = (script.args || []).join("\n");
+  $("scriptCwd").value = script.cwd || "";
+  $("scriptTimeout").value = script.timeoutSeconds || 10;
+  $("monitorName").value = sample.name || "Sample monitor";
+  $("intervalSeconds").value = sample.intervalSeconds || 300;
+  setView("script");
+  applyCondition(sample.condition || { type: "changed" });
+  setStatus(`${sample.name} loaded. Run preview, adjust settings if needed, then save.`);
+  renderSelection();
+}
+
+function applyCondition(condition) {
+  updateConditionOptions();
+  const select = $("conditionType");
+  const option = Array.from(select.options).find((item) => item.value === condition.type);
+  if (option) select.value = condition.type;
+  $("conditionValue").value = condition.value === undefined || condition.value === null ? "" : String(condition.value);
+  updateConditionValueVisibility();
 }
 
 function renderMonitors() {
@@ -460,6 +574,11 @@ async function refreshMonitors() {
   renderMonitors();
 }
 
+async function refreshSamples() {
+  state.sampleMonitors = await api("/api/sample-monitors");
+  renderSamples();
+}
+
 async function refreshLogs() {
   state.logs = await api("/api/logs");
   renderLogs();
@@ -476,6 +595,7 @@ function escapeHtml(value) {
 
 $("websiteSourceButton").addEventListener("click", () => setView("website"));
 $("scriptSourceButton").addEventListener("click", () => setView("script"));
+$("samplesViewButton").addEventListener("click", () => setView("samples"));
 $("monitorsViewButton").addEventListener("click", () => setView("monitors"));
 $("logsViewButton").addEventListener("click", () => setView("logs"));
 
@@ -513,11 +633,12 @@ $("runScriptPreviewButton").addEventListener("click", async () => {
     return;
   }
   setStatus("Running script preview...");
+  const previousSelection = state.scriptSelection;
   state.scriptPreview = await api("/api/scripts/preview", {
     method: "POST",
     body: JSON.stringify(config)
   });
-  state.scriptSelection = null;
+  state.scriptSelection = selectionWithPreviewNode(previousSelection, state.scriptPreview);
   setStatus(state.scriptPreview.ok ? "Preview ready. Select a value or item list." : `Preview failed: ${state.scriptPreview.error}`);
   renderSelection();
 });
@@ -591,9 +712,11 @@ async function saveScriptMonitor() {
 
 $("refreshMonitorsButton").addEventListener("click", refreshMonitors);
 $("refreshLogsButton").addEventListener("click", refreshLogs);
+$("refreshSamplesButton").addEventListener("click", refreshSamples);
 
 setView("website");
 renderSelection();
+await refreshSamples();
 await refreshMonitors();
 await refreshLogs();
 setInterval(refreshSelection, 1500);

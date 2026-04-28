@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenPulse</title>
-    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-3" />
+    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-4" />
   </head>
   <body>
     <div class="appFrame">
@@ -40,6 +40,13 @@
                 <small>Run local output</small>
               </span>
             </button>
+            <button id="samplesViewButton" class="navItem" type="button">
+              <span class="navIcon">T</span>
+              <span>
+                <strong>Sample monitors</strong>
+                <small>Start from a template</small>
+              </span>
+            </button>
           </div>
 
           <div class="navGroup">
@@ -61,10 +68,10 @@
           </div>
 
           <div class="navGroup">
-            <div class="navLabel">Starter folder</div>
+            <div class="navLabel">Samples folder</div>
             <div class="folderCard">
-              <code>/Users/mmor/scratch/openpulse/sample-scripts</code>
-              <span>empty</span>
+              <code>/Users/mmor/scratch/openpulse/sample-monitors</code>
+              <span>ready</span>
             </div>
           </div>
         </nav>
@@ -173,6 +180,19 @@
           </div>
         </section>
 
+        <section id="samplesView" class="focusView hidden">
+          <div id="samples" class="infoPanel">
+            <div class="sectionHeader">
+              <div>
+                <p class="kicker">Templates</p>
+                <h2>Sample monitors</h2>
+              </div>
+              <button id="refreshSamplesButton" class="ghost">Refresh</button>
+            </div>
+            <div id="samplesList" class="sampleGrid"></div>
+          </div>
+        </section>
+
         <section id="monitorsView" class="focusView hidden">
           <div id="monitors" class="infoPanel">
             <div class="sectionHeader">
@@ -201,6 +221,6 @@
       </main>
     </div>
 
-    <script type="module" src="/static/app.js?v=codex-shell-3"></script>
+    <script type="module" src="/static/app.js?v=codex-shell-4"></script>
   </body>
 </html>

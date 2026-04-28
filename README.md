@@ -79,6 +79,21 @@ python3 fixtures/scripts/feed_items.py
 
 Select `items[]`, set ID field to `guid`, display field to `title`, and URL field to `link`.
 
+## Sample Monitors
+
+OpenPulse includes working sample monitor templates in `sample-monitors/`. Open `Sample monitors` in the sidebar, choose a template, and OpenPulse fills the script command, args, selection, condition, and interval into the Script monitor form.
+
+Current samples use only the Python standard library:
+
+- Disk usage
+- CPU usage
+- Folder size
+- RSS feed item detection
+- Process count
+- System load
+
+Samples are templates, not auto-created monitors. Review or edit the settings, run preview, then save the monitor.
+
 ## Test
 
 ```bash

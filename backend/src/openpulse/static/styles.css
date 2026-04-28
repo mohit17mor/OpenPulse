@@ -562,6 +562,61 @@ label {
   overflow-wrap: anywhere;
 }
 
+.sampleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+  gap: 12px;
+}
+
+.sampleCard {
+  display: grid;
+  gap: 14px;
+  align-content: space-between;
+  min-height: 230px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-soft);
+  padding: 15px;
+}
+
+.sampleCard h3 {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.sampleCard p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.sampleCategory {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sampleMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.sampleMeta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
 .eventItem {
   border: 1px solid var(--line);
   border-left-width: 4px;

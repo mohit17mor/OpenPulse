@@ -1,0 +1,141 @@
+[
+  {
+    "id": "disk-usage",
+    "name": "Disk usage",
+    "description": "Watch used disk percentage for a local path.",
+    "category": "Local system",
+    "script": {
+      "command": "python3",
+      "args": ["sample-monitors/scripts/disk_usage.py", "/"],
+      "cwd": ".",
+      "timeoutSeconds": 10
+    },
+    "selection": {
+      "mode": "scalar",
+      "outputType": "json",
+      "path": "disk.usedPercent",
+      "valueType": "number"
+    },
+    "condition": {
+      "type": "greater_than",
+      "value": 85
+    },
+    "intervalSeconds": 300
+  },
+  {
+    "id": "folder-size",
+    "name": "Folder size",
+    "description": "Watch total size and file count for a folder.",
+    "category": "Local system",
+    "script": {
+      "command": "python3",
+      "args": ["sample-monitors/scripts/folder_size.py", "sample-monitors"],
+      "cwd": ".",
+      "timeoutSeconds": 10
+    },
+    "selection": {
+      "mode": "scalar",
+      "outputType": "json",
+      "path": "folder.sizeMb",
+      "valueType": "number"
+    },
+    "condition": {
+      "type": "greater_than",
+      "value": 500
+    },
+    "intervalSeconds": 300
+  },
+  {
+    "id": "cpu-usage",
+    "name": "CPU usage",
+    "description": "Watch approximate current CPU usage percentage.",
+    "category": "Local system",
+    "script": {
+      "command": "python3",
+      "args": ["sample-monitors/scripts/cpu_usage.py"],
+      "cwd": ".",
+      "timeoutSeconds": 10
+    },
+    "selection": {
+      "mode": "scalar",
+      "outputType": "json",
+      "path": "cpu.percent",
+      "valueType": "number"
+    },
+    "condition": {
+      "type": "greater_than",
+      "value": 90
+    },
+    "intervalSeconds": 60
+  },
+  {
+    "id": "rss-feed",
+    "name": "RSS feed",
+    "description": "Detect new items from a feed-like XML source.",
+    "category": "Feeds",
+    "script": {
+      "command": "python3",
+      "args": ["sample-monitors/scripts/rss_feed.py", "sample-monitors/data/sample_feed.xml"],
+      "cwd": ".",
+      "timeoutSeconds": 10
+    },
+    "selection": {
+      "mode": "items",
+      "outputType": "json",
+      "arrayPath": "items",
+      "idField": "id",
+      "displayField": "title",
+      "urlField": "link"
+    },
+    "condition": {
+      "type": "new_item"
+    },
+    "intervalSeconds": 300
+  },
+  {
+    "id": "process-count",
+    "name": "Process count",
+    "description": "Watch how many running processes match a text query.",
+    "category": "Local system",
+    "script": {
+      "command": "python3",
+      "args": ["sample-monitors/scripts/process_count.py", "python"],
+      "cwd": ".",
+      "timeoutSeconds": 10
+    },
+    "selection": {
+      "mode": "scalar",
+      "outputType": "json",
+      "path": "process.count",
+      "valueType": "number"
+    },
+    "condition": {
+      "type": "greater_than",
+      "value": 20
+    },
+    "intervalSeconds": 300
+  },
+  {
+    "id": "system-load",
+    "name": "System load",
+    "description": "Watch one-minute system load on macOS or Linux.",
+    "category": "Local system",
+    "script": {
+      "command": "python3",
+      "args": ["sample-monitors/scripts/system_load.py"],
+      "cwd": ".",
+      "timeoutSeconds": 10
+    },
+    "selection": {
+      "mode": "scalar",
+      "outputType": "json",
+      "path": "system.load1",
+      "valueType": "number"
+    },
+    "condition": {
+      "type": "greater_than",
+      "value": 4
+    },
+    "intervalSeconds": 300
+  }
+]

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
+from openpulse.sample_monitors import list_sample_monitors
 from openpulse.scripts import run_script_preview
 from openpulse.scheduler import MonitorScheduler
 from openpulse.storage import Database
@@ -94,6 +95,10 @@ def create_app(
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/sample-monitors")
+    async def sample_monitors() -> list[dict[str, Any]]:
+        return list_sample_monitors()
 
     @app.post("/api/browser/launch")
     async def launch_browser() -> dict[str, str]:
