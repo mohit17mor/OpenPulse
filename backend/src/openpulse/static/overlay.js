@@ -79,6 +79,8 @@
 
     for (const parent of parents) {
       if (shouldSkipElement(parent)) continue;
+      if (isContentItemElement(parent)) continue;
+      if (isNestedInsideContentItem(parent)) continue;
       const groups = new Map();
       for (const child of Array.from(parent.children || [])) {
         if (shouldSkipElement(child)) continue;
@@ -132,6 +134,15 @@
     if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return true;
     if (element.getAttribute("aria-hidden") === "true") return true;
     return false;
+  }
+
+  function isNestedInsideContentItem(element) {
+    const item = element.closest("article,[role='article']");
+    return item && item !== element;
+  }
+
+  function isContentItemElement(element) {
+    return element.tagName === "ARTICLE" || element.getAttribute("role") === "article";
   }
 
   function hasUsefulChild(element) {

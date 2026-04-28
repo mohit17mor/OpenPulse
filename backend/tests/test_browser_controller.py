@@ -1,5 +1,7 @@
 import asyncio
 
+from playwright.async_api import async_playwright
+
 from openpulse.browser import BrowserController, extract_from_page
 
 
@@ -152,3 +154,33 @@ async def test_extract_from_page_returns_browser_item_list_details():
     assert extracted.value == "2"
     assert extracted.details["items"][1]["id"] == "post-b"
     assert extracted.details["semanticType"] == "item_list"
+
+
+async def test_overlay_ignores_repeated_controls_inside_single_post():
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(channel="chrome", headless=True)
+        page = await browser.new_page()
+        await page.goto("http://127.0.0.1:8000/fixtures/single_social_post_controls.html")
+        await page.add_script_tag(path="backend/src/openpulse/static/overlay.js")
+
+        candidates = await page.evaluate("window.OpenPulseOverlay.getCandidates()")
+
+        await browser.close()
+    list_candidates = [candidate for candidate in candidates if candidate["semanticType"] == "item_list"]
+    assert list_candidates == []
+
+
+async def test_overlay_detects_real_social_feed_items():
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(channel="chrome", headless=True)
+        page = await browser.new_page()
+        await page.goto("http://127.0.0.1:8000/fixtures/social_feed.html")
+        await page.add_script_tag(path="backend/src/openpulse/static/overlay.js")
+
+        candidates = await page.evaluate("window.OpenPulseOverlay.getCandidates()")
+
+        await browser.close()
+    list_candidates = [candidate for candidate in candidates if candidate["semanticType"] == "item_list"]
+    assert len(list_candidates) == 1
+    assert list_candidates[0]["itemSelector"] == ":scope > article"
+    assert len(list_candidates[0]["items"]) == 3
