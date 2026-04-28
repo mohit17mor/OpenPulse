@@ -7,6 +7,8 @@ import sqlite3
 from typing import Any
 from uuid import uuid4
 
+from openpulse.migrations import run_migrations
+
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -31,102 +33,7 @@ class Database:
 
     def initialize(self) -> None:
         with self.connect() as conn:
-            conn.executescript(
-                """
-                create table if not exists monitors (
-                    id text primary key,
-                    name text not null,
-                    url text not null,
-                    target_json text not null,
-                    condition_json text not null,
-                    interval_seconds integer not null default 300,
-                    enabled integer not null default 1,
-                    created_at text not null,
-                    last_checked_at text,
-                    next_check_at text,
-                    last_status text not null default 'pending',
-                    last_error text,
-                    last_duration_ms integer,
-                    last_value text,
-                    consecutive_failures integer not null default 0,
-                    check_started_at text
-                );
-
-                create table if not exists logs (
-                    id text primary key,
-                    monitor_id text,
-                    status text not null,
-                    event_type text not null default 'check_completed',
-                    severity text not null default 'info',
-                    source_type text not null default 'unknown',
-                    title text not null default 'Check completed',
-                    summary text not null default '',
-                    previous_value text,
-                    current_value text,
-                    condition_matched integer not null default 0,
-                    message text not null,
-                    reason_code text,
-                    evidence_json text not null default '{}',
-                    action_hint text,
-                    details_json text not null,
-                    created_at text not null,
-                    foreign key(monitor_id) references monitors(id)
-                );
-
-                create table if not exists script_seen_items (
-                    monitor_id text not null,
-                    item_id text not null,
-                    item_json text not null,
-                    first_seen_at text not null,
-                    primary key(monitor_id, item_id),
-                    foreign key(monitor_id) references monitors(id)
-                );
-                """
-            )
-            self._ensure_monitor_lifecycle_columns(conn)
-            self._ensure_log_event_columns(conn)
-
-    @staticmethod
-    def _ensure_monitor_lifecycle_columns(conn: sqlite3.Connection) -> None:
-        columns = {row["name"] for row in conn.execute("pragma table_info(monitors)").fetchall()}
-        migrations = {
-            "next_check_at": "alter table monitors add column next_check_at text",
-            "last_status": "alter table monitors add column last_status text not null default 'pending'",
-            "last_error": "alter table monitors add column last_error text",
-            "last_duration_ms": "alter table monitors add column last_duration_ms integer",
-            "last_value": "alter table monitors add column last_value text",
-            "consecutive_failures": "alter table monitors add column consecutive_failures integer not null default 0",
-            "check_started_at": "alter table monitors add column check_started_at text",
-        }
-        for column, sql in migrations.items():
-            if column not in columns:
-                conn.execute(sql)
-        conn.execute(
-            """
-            update monitors
-            set check_started_at = null,
-                last_status = 'error',
-                last_error = 'interrupted_check'
-            where check_started_at is not null
-            """
-        )
-
-    @staticmethod
-    def _ensure_log_event_columns(conn: sqlite3.Connection) -> None:
-        columns = {row["name"] for row in conn.execute("pragma table_info(logs)").fetchall()}
-        migrations = {
-            "event_type": "alter table logs add column event_type text not null default 'check_completed'",
-            "severity": "alter table logs add column severity text not null default 'info'",
-            "source_type": "alter table logs add column source_type text not null default 'unknown'",
-            "title": "alter table logs add column title text not null default 'Check completed'",
-            "summary": "alter table logs add column summary text not null default ''",
-            "reason_code": "alter table logs add column reason_code text",
-            "evidence_json": "alter table logs add column evidence_json text not null default '{}'",
-            "action_hint": "alter table logs add column action_hint text",
-        }
-        for column, sql in migrations.items():
-            if column not in columns:
-                conn.execute(sql)
+            run_migrations(conn)
 
     def create_monitor(self, payload: dict[str, Any]) -> dict[str, Any]:
         created_at = payload.get("createdAt") or utc_now()
