@@ -43,6 +43,11 @@ async def test_check_engine_logs_matched_condition(tmp_path):
     assert logs[0]["conditionMatched"] is True
     assert logs[0]["currentValue"] == "$89.00"
     assert logs[0]["message"] == "number_less_than"
+    assert logs[0]["eventType"] == "condition_matched"
+    assert logs[0]["severity"] == "success"
+    assert logs[0]["sourceType"] == "website"
+    assert logs[0]["title"] == "Condition matched"
+    assert "$89.00" in logs[0]["summary"]
     updated = db.get_monitor(monitor["id"])
     assert updated["lastStatus"] == "matched"
     assert updated["lastValue"] == "$89.00"
@@ -63,6 +68,10 @@ async def test_check_engine_logs_missing_target(tmp_path):
     assert result["status"] == "missing"
     assert logs[0]["conditionMatched"] is False
     assert logs[0]["message"] == "target_missing"
+    assert logs[0]["eventType"] == "target_missing"
+    assert logs[0]["severity"] == "warning"
+    assert logs[0]["title"] == "Target missing"
+    assert logs[0]["actionHint"] == "Open the page and repair the monitor target."
     updated = db.get_monitor(monitor["id"])
     assert updated["lastStatus"] == "missing"
     assert updated["lastError"] == "target_missing"
@@ -89,3 +98,6 @@ async def test_check_engine_logs_security_verification_as_blocked(tmp_path):
     logs = db.list_logs()
     assert result["status"] == "blocked"
     assert logs[0]["message"] == "security_verification"
+    assert logs[0]["eventType"] == "page_blocked"
+    assert logs[0]["severity"] == "warning"
+    assert logs[0]["title"] == "Page blocked"

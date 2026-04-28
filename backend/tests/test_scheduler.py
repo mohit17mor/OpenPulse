@@ -65,6 +65,10 @@ async def test_scheduler_records_lifecycle_state_for_failed_checks(tmp_path):
     updated = db.get_monitor(monitor["id"])
     assert results == []
     assert logs[0]["status"] == "error"
+    assert logs[0]["eventType"] == "scheduler_error"
+    assert logs[0]["severity"] == "error"
+    assert logs[0]["sourceType"] == "scheduler"
+    assert logs[0]["title"] == "Scheduled check failed"
     assert updated["lastStatus"] == "error"
     assert updated["lastError"] == "scheduled_check_failed"
     assert updated["consecutiveFailures"] == 1

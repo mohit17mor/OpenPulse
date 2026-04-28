@@ -414,14 +414,25 @@ function renderLogs() {
   container.innerHTML = state.logs
     .map(
       (log) => `
-        <article class="item">
-          <div class="itemTitle">
-            <span class="${log.status}">${escapeHtml(log.status)}</span>
-            <span>${new Date(log.createdAt).toLocaleString()}</span>
+        <article class="eventItem ${escapeHtml(log.severity || "info")}">
+          <div class="eventHeader">
+            <div>
+              <div class="eventTitle">${escapeHtml(log.title || log.message)}</div>
+              <div class="eventTime">${escapeHtml(formatDateTime(log.createdAt))}</div>
+            </div>
+            <div class="eventBadges">
+              <span class="statePill ${escapeHtml(log.severity || statusClass(log.status))}">${escapeHtml(log.severity || log.status)}</span>
+              <span class="statePill">${escapeHtml(log.sourceType || "unknown")}</span>
+            </div>
           </div>
-          <div class="itemMeta">${escapeHtml(log.message)}</div>
-          <div class="itemMeta">Previous: ${escapeHtml(log.previousValue || "-")}</div>
-          <div class="itemMeta">Current: ${escapeHtml(logDisplayValue(log))}</div>
+          <div class="eventSummary">${escapeHtml(log.summary || log.message)}</div>
+          <div class="eventFacts">
+            <span>Type: ${escapeHtml(log.eventType || "check_completed")}</span>
+            <span>Reason: ${escapeHtml(log.reasonCode || log.message || "-")}</span>
+            <span>Previous: ${escapeHtml(log.previousValue || "-")}</span>
+            <span>Current: ${escapeHtml(logDisplayValue(log))}</span>
+          </div>
+          ${log.actionHint ? `<div class="eventHint">${escapeHtml(log.actionHint)}</div>` : ""}
         </article>
       `
     )

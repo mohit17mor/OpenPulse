@@ -60,6 +60,15 @@ class CheckEngine:
             {
                 "monitorId": monitor_id,
                 "status": status,
+                **_event_fields(
+                    source_type="website",
+                    status=status,
+                    message=message,
+                    previous_value=previous_value,
+                    current_value=extracted.value,
+                    condition_matched=condition_result.matched,
+                    evidence=extracted.details,
+                ),
                 "previousValue": previous_value,
                 "currentValue": extracted.value,
                 "conditionMatched": condition_result.matched,
@@ -81,6 +90,15 @@ class CheckEngine:
                 {
                     "monitorId": monitor_id,
                     "status": "error" if preview.get("error") != "script_empty_output" else "missing",
+                    **_event_fields(
+                        source_type="script",
+                        status="error" if preview.get("error") != "script_empty_output" else "missing",
+                        message=preview.get("error", "script_failed"),
+                        previous_value=selection.get("initialValue"),
+                        current_value=None,
+                        condition_matched=False,
+                        evidence={"execution": preview.get("execution")},
+                    ),
                     "previousValue": selection.get("initialValue"),
                     "currentValue": None,
                     "conditionMatched": False,
@@ -100,6 +118,15 @@ class CheckEngine:
                 {
                     "monitorId": monitor_id,
                     "status": "missing" if exc.reason == "script_path_missing" else "error",
+                    **_event_fields(
+                        source_type="script",
+                        status="missing" if exc.reason == "script_path_missing" else "error",
+                        message=exc.reason,
+                        previous_value=selection.get("initialValue"),
+                        current_value=None,
+                        condition_matched=False,
+                        evidence={"error": str(exc), "execution": preview.get("execution")},
+                    ),
                     "previousValue": selection.get("initialValue"),
                     "currentValue": None,
                     "conditionMatched": False,
@@ -131,6 +158,15 @@ class CheckEngine:
             {
                 "monitorId": monitor["id"],
                 "status": status,
+                **_event_fields(
+                    source_type="script",
+                    status=status,
+                    message=condition_result.reason,
+                    previous_value=previous_value,
+                    current_value=current_value,
+                    condition_matched=condition_result.matched,
+                    evidence={"selection": selection, "execution": preview.get("execution")},
+                ),
                 "previousValue": previous_value,
                 "currentValue": current_value,
                 "conditionMatched": condition_result.matched,
@@ -159,6 +195,15 @@ class CheckEngine:
                 {
                     "monitorId": monitor["id"],
                     "status": "checked",
+                    **_event_fields(
+                        source_type="script",
+                        status="checked",
+                        message="baseline_established",
+                        previous_value=None,
+                        current_value=str(len(items)),
+                        condition_matched=False,
+                        evidence={"itemCount": len(items), "selection": selection},
+                    ),
                     "previousValue": None,
                     "currentValue": str(len(items)),
                     "conditionMatched": False,
@@ -175,6 +220,15 @@ class CheckEngine:
                 {
                     "monitorId": monitor["id"],
                     "status": "checked",
+                    **_event_fields(
+                        source_type="script",
+                        status="checked",
+                        message="no_new_items",
+                        previous_value=str(len(seen_ids)),
+                        current_value=str(len(items)),
+                        condition_matched=False,
+                        evidence={"itemCount": len(items), "selection": selection},
+                    ),
                     "previousValue": str(len(seen_ids)),
                     "currentValue": str(len(items)),
                     "conditionMatched": False,
@@ -192,6 +246,20 @@ class CheckEngine:
                     {
                         "monitorId": monitor["id"],
                         "status": "matched",
+                        **_event_fields(
+                            source_type="script",
+                            status="matched",
+                            message="new_item_detected",
+                            previous_value=None,
+                            current_value=item["id"],
+                            condition_matched=True,
+                            evidence={
+                                "item": item["item"],
+                                "selection": selection,
+                                "display": _item_display(item["item"], selection),
+                                "url": _item_field(item["item"], selection.get("urlField")),
+                            },
+                        ),
                         "previousValue": None,
                         "currentValue": item["id"],
                         "conditionMatched": True,
@@ -244,3 +312,108 @@ def _item_display(item: dict[str, Any], selection: dict[str, Any]) -> str:
     if value is None:
         value = _item_field(item, selection.get("idField"))
     return str(value)
+
+
+def _event_fields(
+    *,
+    source_type: str,
+    status: str,
+    message: str,
+    previous_value: str | None,
+    current_value: str | None,
+    condition_matched: bool,
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    event_type = _event_type(source_type, status, message, condition_matched)
+    display = evidence.get("display")
+    summary = _event_summary(
+        event_type,
+        message=message,
+        previous_value=previous_value,
+        current_value=current_value,
+        display=display,
+    )
+    return {
+        "eventType": event_type,
+        "severity": _severity(status, condition_matched),
+        "sourceType": source_type,
+        "title": _title(event_type),
+        "summary": summary,
+        "reasonCode": message,
+        "evidence": evidence,
+        "actionHint": _action_hint(event_type),
+    }
+
+
+def _event_type(source_type: str, status: str, message: str, condition_matched: bool) -> str:
+    if message == "new_item_detected":
+        return "new_item_detected"
+    if source_type == "script" and status == "error":
+        return "script_timeout" if message == "script_timeout" else "script_failed"
+    if source_type == "script" and status == "missing":
+        return "script_output_missing"
+    if status == "blocked":
+        return "page_blocked"
+    if status == "missing":
+        return "target_missing"
+    if condition_matched or status == "matched":
+        return "condition_matched"
+    return "check_completed"
+
+
+def _severity(status: str, condition_matched: bool) -> str:
+    if condition_matched or status == "matched":
+        return "success"
+    if status in {"missing", "blocked"}:
+        return "warning"
+    if status == "error":
+        return "error"
+    return "info"
+
+
+def _title(event_type: str) -> str:
+    titles = {
+        "condition_matched": "Condition matched",
+        "target_missing": "Target missing",
+        "page_blocked": "Page blocked",
+        "script_failed": "Script check failed",
+        "script_timeout": "Script timed out",
+        "script_output_missing": "Script output missing",
+        "new_item_detected": "New item detected",
+        "check_completed": "Check completed",
+    }
+    return titles.get(event_type, "Check event")
+
+
+def _event_summary(
+    event_type: str,
+    *,
+    message: str,
+    previous_value: str | None,
+    current_value: str | None,
+    display: Any,
+) -> str:
+    if event_type == "condition_matched":
+        return f"Condition matched. Previous: {previous_value or '-'}, current: {current_value or '-'}."
+    if event_type == "target_missing":
+        return "OpenPulse loaded the page but could not find the selected target."
+    if event_type == "page_blocked":
+        return "The website showed a security or verification page."
+    if event_type == "new_item_detected":
+        return f"New item detected: {display or current_value or '-'}."
+    if event_type == "script_output_missing":
+        return "The script ran, but the selected output was not found."
+    if event_type in {"script_failed", "script_timeout"}:
+        return f"Script check failed with reason: {message}."
+    return f"Check completed. Current value: {current_value or '-'}."
+
+
+def _action_hint(event_type: str) -> str | None:
+    hints = {
+        "target_missing": "Open the page and repair the monitor target.",
+        "page_blocked": "Open the browser session and check whether the site is asking for verification.",
+        "script_failed": "Run the script preview and inspect stderr/output.",
+        "script_timeout": "Increase the timeout or make the script finish faster.",
+        "script_output_missing": "Run preview again and choose an output path that exists.",
+    }
+    return hints.get(event_type)

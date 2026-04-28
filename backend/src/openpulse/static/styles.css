@@ -562,6 +562,88 @@ label {
   overflow-wrap: anywhere;
 }
 
+.eventItem {
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 13px;
+  background: var(--surface-soft);
+  padding: 14px;
+}
+
+.eventItem.info {
+  border-left-color: var(--line-strong);
+}
+
+.eventItem.success {
+  border-left-color: #12b981;
+}
+
+.eventItem.warning {
+  border-left-color: #d28b20;
+}
+
+.eventItem.error {
+  border-left-color: var(--danger);
+}
+
+.eventHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.eventTitle {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.eventTime {
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.eventBadges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.eventSummary {
+  margin-top: 10px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.eventFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.eventFacts span,
+.eventHint {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  padding: 6px 8px;
+}
+
+.eventHint {
+  margin-top: 10px;
+  color: var(--warning);
+}
+
 .stateRow {
   display: flex;
   flex-wrap: wrap;
@@ -585,11 +667,13 @@ label {
 
 .statePill.pending,
 .statePill.checking,
-.statePill.checked {
+.statePill.checked,
+.statePill.info {
   color: var(--ink);
 }
 
-.statePill.matched {
+.statePill.matched,
+.statePill.success {
   border-color: #a7dbc8;
   background: #f0fbf6;
   color: #057a55;

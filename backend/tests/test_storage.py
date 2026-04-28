@@ -42,6 +42,44 @@ def test_database_persists_monitors_and_logs(tmp_path):
     assert monitors[0]["target"]["semanticType"] == "price"
     assert logs[0]["status"] == "matched"
     assert logs[0]["conditionMatched"] is True
+    assert logs[0]["eventType"] == "condition_matched"
+    assert logs[0]["severity"] == "success"
+    assert logs[0]["title"] == "Condition matched"
+
+
+def test_database_persists_structured_log_event_fields(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+
+    log = db.create_log(
+        {
+            "monitorId": "monitor-1",
+            "status": "missing",
+            "eventType": "target_missing",
+            "severity": "warning",
+            "sourceType": "website",
+            "title": "Target missing",
+            "summary": "OpenPulse loaded the page but could not find the selected target.",
+            "previousValue": "$129.00",
+            "currentValue": None,
+            "conditionMatched": False,
+            "message": "target_missing",
+            "reasonCode": "selector_not_found",
+            "evidence": {"selector": "#price"},
+            "actionHint": "Open the page and repair the selection.",
+            "details": {"selector": "#price"},
+        }
+    )
+
+    saved = db.list_logs()[0]
+    assert log["eventType"] == "target_missing"
+    assert saved["severity"] == "warning"
+    assert saved["sourceType"] == "website"
+    assert saved["title"] == "Target missing"
+    assert saved["summary"].startswith("OpenPulse loaded")
+    assert saved["reasonCode"] == "selector_not_found"
+    assert saved["evidence"] == {"selector": "#price"}
+    assert saved["actionHint"] == "Open the page and repair the selection."
 
 
 def test_database_deletes_monitor_and_its_logs(tmp_path):

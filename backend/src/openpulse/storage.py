@@ -56,10 +56,18 @@ class Database:
                     id text primary key,
                     monitor_id text,
                     status text not null,
+                    event_type text not null default 'check_completed',
+                    severity text not null default 'info',
+                    source_type text not null default 'unknown',
+                    title text not null default 'Check completed',
+                    summary text not null default '',
                     previous_value text,
                     current_value text,
                     condition_matched integer not null default 0,
                     message text not null,
+                    reason_code text,
+                    evidence_json text not null default '{}',
+                    action_hint text,
                     details_json text not null,
                     created_at text not null,
                     foreign key(monitor_id) references monitors(id)
@@ -76,6 +84,7 @@ class Database:
                 """
             )
             self._ensure_monitor_lifecycle_columns(conn)
+            self._ensure_log_event_columns(conn)
 
     @staticmethod
     def _ensure_monitor_lifecycle_columns(conn: sqlite3.Connection) -> None:
@@ -101,6 +110,23 @@ class Database:
             where check_started_at is not null
             """
         )
+
+    @staticmethod
+    def _ensure_log_event_columns(conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("pragma table_info(logs)").fetchall()}
+        migrations = {
+            "event_type": "alter table logs add column event_type text not null default 'check_completed'",
+            "severity": "alter table logs add column severity text not null default 'info'",
+            "source_type": "alter table logs add column source_type text not null default 'unknown'",
+            "title": "alter table logs add column title text not null default 'Check completed'",
+            "summary": "alter table logs add column summary text not null default ''",
+            "reason_code": "alter table logs add column reason_code text",
+            "evidence_json": "alter table logs add column evidence_json text not null default '{}'",
+            "action_hint": "alter table logs add column action_hint text",
+        }
+        for column, sql in migrations.items():
+            if column not in columns:
+                conn.execute(sql)
 
     def create_monitor(self, payload: dict[str, Any]) -> dict[str, Any]:
         created_at = payload.get("createdAt") or utc_now()
@@ -299,14 +325,36 @@ class Database:
         return {row["item_id"] for row in rows}
 
     def create_log(self, payload: dict[str, Any]) -> dict[str, Any]:
+        status = payload["status"]
+        message = payload["message"]
+        previous_value = payload.get("previousValue")
+        current_value = payload.get("currentValue")
+        condition_matched = bool(payload.get("conditionMatched", False))
+        event_type = payload.get("eventType") or _default_event_type(status, message, condition_matched)
+        severity = payload.get("severity") or _default_severity(status, condition_matched)
+        title = payload.get("title") or _default_title(event_type, status)
+        summary = payload.get("summary") or _default_summary(
+            event_type,
+            previous_value=previous_value,
+            current_value=current_value,
+            message=message,
+        )
         log = {
             "id": payload.get("id") or str(uuid4()),
             "monitorId": payload.get("monitorId"),
-            "status": payload["status"],
-            "previousValue": payload.get("previousValue"),
-            "currentValue": payload.get("currentValue"),
-            "conditionMatched": bool(payload.get("conditionMatched", False)),
-            "message": payload["message"],
+            "status": status,
+            "eventType": event_type,
+            "severity": severity,
+            "sourceType": payload.get("sourceType") or "unknown",
+            "title": title,
+            "summary": summary,
+            "previousValue": previous_value,
+            "currentValue": current_value,
+            "conditionMatched": condition_matched,
+            "message": message,
+            "reasonCode": payload.get("reasonCode") or message,
+            "evidence": payload.get("evidence") or {},
+            "actionHint": payload.get("actionHint"),
             "details": payload.get("details") or {},
             "createdAt": payload.get("createdAt") or utc_now(),
         }
@@ -314,19 +362,29 @@ class Database:
             conn.execute(
                 """
                 insert into logs (
-                    id, monitor_id, status, previous_value, current_value,
-                    condition_matched, message, details_json, created_at
+                    id, monitor_id, status, event_type, severity, source_type,
+                    title, summary, previous_value, current_value,
+                    condition_matched, message, reason_code, evidence_json,
+                    action_hint, details_json, created_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     log["id"],
                     log["monitorId"],
                     log["status"],
+                    log["eventType"],
+                    log["severity"],
+                    log["sourceType"],
+                    log["title"],
+                    log["summary"],
                     log["previousValue"],
                     log["currentValue"],
                     1 if log["conditionMatched"] else 0,
                     log["message"],
+                    log["reasonCode"],
+                    json.dumps(log["evidence"]),
+                    log["actionHint"],
                     json.dumps(log["details"]),
                     log["createdAt"],
                 ),
@@ -368,10 +426,75 @@ class Database:
             "id": row["id"],
             "monitorId": row["monitor_id"],
             "status": row["status"],
+            "eventType": row["event_type"],
+            "severity": row["severity"],
+            "sourceType": row["source_type"],
+            "title": row["title"],
+            "summary": row["summary"],
             "previousValue": row["previous_value"],
             "currentValue": row["current_value"],
             "conditionMatched": bool(row["condition_matched"]),
             "message": row["message"],
+            "reasonCode": row["reason_code"],
+            "evidence": json.loads(row["evidence_json"]),
+            "actionHint": row["action_hint"],
             "details": json.loads(row["details_json"]),
             "createdAt": row["created_at"],
         }
+
+
+def _default_event_type(status: str, message: str, condition_matched: bool) -> str:
+    if condition_matched or status == "matched":
+        return "condition_matched"
+    if status == "missing":
+        return "target_missing"
+    if status == "blocked":
+        return "page_blocked"
+    if status == "error":
+        return "check_failed"
+    return "check_completed"
+
+
+def _default_severity(status: str, condition_matched: bool) -> str:
+    if condition_matched or status == "matched":
+        return "success"
+    if status in {"missing", "blocked"}:
+        return "warning"
+    if status == "error":
+        return "error"
+    return "info"
+
+
+def _default_title(event_type: str, status: str) -> str:
+    titles = {
+        "condition_matched": "Condition matched",
+        "target_missing": "Target missing",
+        "page_blocked": "Page blocked",
+        "script_failed": "Script check failed",
+        "script_timeout": "Script timed out",
+        "new_item_detected": "New item detected",
+        "scheduler_error": "Scheduled check failed",
+        "check_failed": "Check failed",
+        "check_completed": "Check completed",
+    }
+    return titles.get(event_type, status.replace("_", " ").title())
+
+
+def _default_summary(
+    event_type: str,
+    *,
+    previous_value: str | None,
+    current_value: str | None,
+    message: str,
+) -> str:
+    if event_type == "condition_matched":
+        return f"Condition matched. Previous: {previous_value or '-'}, current: {current_value or '-'}."
+    if event_type == "target_missing":
+        return "OpenPulse loaded the source but could not find the selected target."
+    if event_type == "page_blocked":
+        return "The website showed a security or verification page."
+    if event_type == "new_item_detected":
+        return f"New item detected: {current_value or '-'}."
+    if event_type in {"script_failed", "script_timeout", "scheduler_error", "check_failed"}:
+        return f"Check failed with reason: {message}."
+    return f"Check completed. Current value: {current_value or '-'}."

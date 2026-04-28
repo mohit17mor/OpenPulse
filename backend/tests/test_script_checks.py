@@ -88,6 +88,11 @@ async def test_script_items_baseline_then_detects_new_items(tmp_path):
     assert result["status"] == "matched"
     assert logs[0]["message"] == "new_item_detected"
     assert logs[0]["currentValue"] == "b"
+    assert logs[0]["eventType"] == "new_item_detected"
+    assert logs[0]["severity"] == "success"
+    assert logs[0]["sourceType"] == "script"
+    assert logs[0]["title"] == "New item detected"
+    assert "B" in logs[0]["summary"]
     assert db.list_script_seen_item_ids(monitor["id"]) == {"a", "b"}
 
 
@@ -162,6 +167,10 @@ async def test_script_scalar_json_selection_reports_invalid_json(tmp_path):
 
     assert result["status"] == "error"
     assert result["message"] == "script_invalid_json"
+    log = db.list_logs()[0]
+    assert log["eventType"] == "script_failed"
+    assert log["severity"] == "error"
+    assert log["title"] == "Script check failed"
 
 
 async def test_script_scalar_missing_path_logs_missing(tmp_path):

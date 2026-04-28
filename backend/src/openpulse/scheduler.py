@@ -78,10 +78,18 @@ class MonitorScheduler:
                         {
                             "monitorId": monitor_id,
                             "status": "error",
+                            "eventType": "scheduler_error",
+                            "severity": "error",
+                            "sourceType": "scheduler",
+                            "title": "Scheduled check failed",
+                            "summary": "The scheduler tried to run this monitor, but the check raised an unexpected error.",
                             "previousValue": monitor.get("target", {}).get("initialValue"),
                             "currentValue": None,
                             "conditionMatched": False,
                             "message": "scheduled_check_failed",
+                            "reasonCode": "scheduled_check_failed",
+                            "evidence": {"error": str(exc)},
+                            "actionHint": "Check the event details and run the monitor manually to reproduce the failure.",
                             "details": {"error": str(exc)},
                         }
                     )
