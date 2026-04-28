@@ -271,6 +271,30 @@ async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, sou
         blocker["source"] = source
         return ExtractedValue(found=False, value=None, details=blocker)
 
+    if target.get("sourceType") == "website" and target.get("mode") == "items":
+        items = await _extract_target_items(page, target)
+        if not items:
+            return ExtractedValue(
+                found=False,
+                value=None,
+                details={
+                    "reason": "target_not_found",
+                    "source": source,
+                    "selector": target.get("selector"),
+                    "semanticType": "item_list",
+                },
+            )
+        return ExtractedValue(
+            found=True,
+            value=str(len(items)),
+            details={
+                "source": source,
+                "selector": target.get("selector"),
+                "semanticType": "item_list",
+                "items": items,
+            },
+        )
+
     value = await _extract_target_value(page, target)
     if value is None:
         return ExtractedValue(
@@ -318,6 +342,73 @@ async def _detect_security_verification(page: Page, status: int | None) -> dict[
             "title": title,
         }
     return None
+
+
+async def _extract_target_items(page: Page, target: dict[str, Any]) -> list[dict[str, Any]]:
+    items = await page.evaluate(
+        """
+        (target) => {
+          const normalizeText = (text) => String(text || "").replace(/\\s+/g, " ").trim();
+          const isVisible = (element) => {
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            return rect.width >= 8 && rect.height >= 8 && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0;
+          };
+          const absoluteUrl = (href) => {
+            if (!href) return "";
+            try {
+              return new URL(href, window.location.href).href;
+            } catch (_error) {
+              return href;
+            }
+          };
+          const textFrom = (element, selector) => {
+            const found = selector ? element.querySelector(selector) : null;
+            return normalizeText((found || element).innerText || (found || element).textContent || "");
+          };
+          const container = target.selector ? document.querySelector(target.selector) : document.body;
+          if (!container) return [];
+          let elements = [];
+          if (target.itemSelector) {
+            try {
+              elements = Array.from(container.querySelectorAll(target.itemSelector));
+            } catch (_error) {
+              elements = [];
+            }
+          }
+          if (elements.length === 0) {
+            elements = Array.from(container.children);
+          }
+          return elements
+            .filter(isVisible)
+            .map((element, index) => {
+              const link = element.matches("a[href]") ? element : element.querySelector("a[href]");
+              const url = absoluteUrl(link?.getAttribute("href") || "");
+              const title = textFrom(element, "h1,h2,h3,[role='heading'],a[href]").slice(0, 180);
+              const text = normalizeText(element.innerText || element.textContent || "").slice(0, 500);
+              const attrId = element.getAttribute("data-id") || element.getAttribute("data-testid") || element.id || "";
+              const id = url || attrId || title || text || `item-${index + 1}`;
+              return {
+                id: String(id),
+                item: {
+                  id: String(id),
+                  title: title || text.slice(0, 120) || String(id),
+                  url,
+                  text,
+                  index: index + 1
+                }
+              };
+            })
+            .filter((item) => item.id && item.item.text)
+            .slice(0, 100);
+        }
+        """,
+        target,
+    )
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict) and item.get("id")]
 
 
 async def _extract_target_value(page: Page, target: dict[str, Any]) -> str | None:

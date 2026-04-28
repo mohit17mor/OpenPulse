@@ -76,6 +76,9 @@ function setSource(source) {
 }
 
 function conditionFromForm() {
+  if (state.source === "website" && state.selection?.mode === "items") {
+    return { type: "new_item" };
+  }
   if (state.source === "script" && state.scriptSelection?.mode === "items") {
     return { type: "new_item" };
   }
@@ -92,6 +95,11 @@ function conditionFromForm() {
 
 function updateConditionOptions() {
   const select = $("conditionType");
+  if (state.source === "website" && state.selection?.mode === "items") {
+    select.innerHTML = '<option value="new_item">new item appears</option>';
+    $("conditionValueRow").style.display = "none";
+    return;
+  }
   if (state.source === "script" && state.scriptSelection?.mode === "items") {
     select.innerHTML = '<option value="new_item">new item appears</option>';
     $("conditionValueRow").style.display = "none";
@@ -489,6 +497,9 @@ function monitorSummary(monitor) {
     }
     return `Watching script value: ${selection.path || "full output"}`;
   }
+  if (monitor.target?.sourceType === "website" && monitor.target?.mode === "items") {
+    return `Watching for new visible items on ${monitor.url}`;
+  }
   return `Watching ${monitor.target?.semanticType || "selected target"} on ${monitor.url}`;
 }
 
@@ -562,8 +573,12 @@ async function refreshSelection() {
   const selection = await api("/api/selection");
   if (selection && JSON.stringify(selection) !== JSON.stringify(state.selection)) {
     state.selection = selection;
-    $("monitorName").value = `${selection.semanticType} watch`;
-    $("conditionType").value = selection.semanticType === "price" || selection.semanticType === "number" ? "less_than" : "changed";
+    $("monitorName").value = selection.mode === "items" ? "new website items" : `${selection.semanticType} watch`;
+    $("conditionType").value = selection.mode === "items"
+      ? "new_item"
+      : selection.semanticType === "price" || selection.semanticType === "number"
+        ? "less_than"
+        : "changed";
     updateConditionOptions();
     renderSelection();
   }
@@ -659,12 +674,17 @@ async function saveWebsiteMonitor() {
     setStatus("Select a target in the browser before saving a monitor.");
     return;
   }
+  const target = { ...state.selection };
+  if (target.mode === "items") {
+    target._baselineItems = target.items || [];
+    delete target.items;
+  }
   await api("/api/monitors", {
     method: "POST",
     body: JSON.stringify({
       name: $("monitorName").value.trim() || "OpenPulse monitor",
       url: state.selection.url,
-      target: state.selection,
+      target,
       condition: conditionFromForm(),
       intervalSeconds: Number($("intervalSeconds").value || 300),
       enabled: true

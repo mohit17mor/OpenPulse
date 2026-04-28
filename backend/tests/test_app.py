@@ -4,6 +4,7 @@ import sys
 
 from openpulse.app import create_app
 from openpulse.checker import ExtractedValue
+from openpulse.storage import Database
 
 
 class FakeExtractor:
@@ -121,3 +122,34 @@ def test_script_item_monitor_save_baselines_preview_items(tmp_path):
     monitor_id = response.json()["id"]
     assert response.json()["target"].get("_baselineItems") is None
     assert client.delete(f"/api/monitors/{monitor_id}").status_code == 200
+
+
+def test_website_item_monitor_save_baselines_selected_items(tmp_path):
+    db_path = tmp_path / "openpulse.db"
+    app = create_app(db_path=db_path, extractor=FakeExtractor(), start_scheduler=False)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/monitors",
+        json={
+            "name": "Social feed",
+            "url": "https://example.test/feed",
+            "target": {
+                "sourceType": "website",
+                "mode": "items",
+                "selector": "main",
+                "selection": {"mode": "items", "idField": "id", "displayField": "title", "urlField": "url"},
+                "_baselineItems": [
+                    {"id": "item-1", "item": {"id": "item-1", "title": "First"}},
+                    {"id": "item-2", "item": {"id": "item-2", "title": "Second"}},
+                ],
+            },
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 300,
+        },
+    )
+
+    db = Database(db_path)
+    assert response.status_code == 200
+    assert response.json()["target"].get("_baselineItems") is None
+    assert db.list_seen_item_ids(response.json()["id"]) == {"item-1", "item-2"}

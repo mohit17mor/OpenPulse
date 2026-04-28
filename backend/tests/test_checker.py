@@ -101,3 +101,63 @@ async def test_check_engine_logs_security_verification_as_blocked(tmp_path):
     assert logs[0]["eventType"] == "page_blocked"
     assert logs[0]["severity"] == "warning"
     assert logs[0]["title"] == "Page blocked"
+
+
+async def test_check_engine_detects_new_website_items(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = db.create_monitor(
+        {
+            "name": "Social feed",
+            "url": "https://example.test/feed",
+            "target": {
+                "sourceType": "website",
+                "mode": "items",
+                "semanticType": "item_list",
+                "selector": "main",
+                "selection": {
+                    "mode": "items",
+                    "idField": "id",
+                    "displayField": "title",
+                    "urlField": "url",
+                },
+            },
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 300,
+            "enabled": True,
+        }
+    )
+    db.add_seen_items(monitor["id"], [{"id": "post-a", "item": {"id": "post-a", "title": "Already seen"}}])
+    engine = CheckEngine(
+        db,
+        FakeExtractor(
+            ExtractedValue(
+                found=True,
+                value="2",
+                details={
+                    "items": [
+                        {"id": "post-a", "item": {"id": "post-a", "title": "Already seen"}},
+                        {
+                            "id": "post-b",
+                            "item": {
+                                "id": "post-b",
+                                "title": "Fresh post",
+                                "url": "https://example.test/post-b",
+                            },
+                        },
+                    ]
+                },
+            )
+        ),
+    )
+
+    result = await engine.run_check(monitor["id"])
+
+    logs = db.list_logs()
+    assert result["status"] == "matched"
+    assert result["message"] == "new_items_detected"
+    assert logs[0]["message"] == "new_item_detected"
+    assert logs[0]["sourceType"] == "website"
+    assert logs[0]["summary"] == "New item detected: Fresh post."
+    assert logs[0]["details"]["url"] == "https://example.test/post-b"
+    assert db.list_seen_item_ids(monitor["id"]) == {"post-a", "post-b"}

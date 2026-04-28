@@ -146,8 +146,8 @@ def create_app(
                 "enabled": request.enabled,
             }
         )
-        if target.get("sourceType") == "script" and target.get("selection", {}).get("mode") == "items":
-            db.add_script_seen_items(monitor["id"], baseline_items)
+        if _is_item_monitor_target(target):
+            db.add_seen_items(monitor["id"], baseline_items)
         return monitor
 
     @app.get("/api/monitors")
@@ -172,6 +172,12 @@ def create_app(
         return db.list_logs()
 
     return app
+
+
+def _is_item_monitor_target(target: dict[str, Any]) -> bool:
+    if target.get("sourceType") == "script":
+        return target.get("selection", {}).get("mode") == "items"
+    return target.get("sourceType") == "website" and target.get("mode") == "items"
 
 
 app = create_app()

@@ -1,8 +1,8 @@
 # OpenPulse
 
-OpenPulse is a local-first visual website monitor. Open a controlled browser, press `M` on a public page, select a highlighted fact, save a condition, and inspect local check logs.
+OpenPulse is a local-first visual website monitor. Open a controlled browser, press `M` on a page, select a highlighted fact or repeated list, save a condition, and inspect local check logs.
 
-This MVP intentionally avoids npm, browser extensions, LLMs, APIs, login handling, CAPTCHA handling, and external services. The runtime is Python/FastAPI with browser-native JavaScript served as static files.
+This MVP intentionally avoids npm, browser extensions, LLMs, required APIs, credential storage, CAPTCHA handling, and external services. The runtime is Python/FastAPI with browser-native JavaScript served as static files.
 
 ## Setup
 
@@ -42,6 +42,17 @@ Open `http://127.0.0.1:8000`.
 OpenPulse checks use the already-launched app browser session when one exists. This helps with pages that behave differently in a fresh headless browser. If no app browser is open, checks fall back to a separate headless browser.
 
 If a site serves a bot/security verification page, logs show `blocked` with `security_verification` instead of a generic missing target.
+
+## Browser Item Lists
+
+Website monitors can also watch repeated visible items, such as posts, videos, articles, jobs, or product cards:
+
+1. Open a list-like page in the controlled browser.
+2. Press `M`.
+3. Click a dashed repeated-list highlight.
+4. Save the monitor with `new item appears`.
+
+OpenPulse stores the currently visible item links/text as the baseline and logs only unseen item IDs later. The local fixtures `fixtures/social_feed.html` and `fixtures/social_feed_changed.html` are useful for testing this flow safely before trying public social feeds.
 
 ## Script Monitors
 
