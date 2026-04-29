@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
+from openpulse.delivery import DeliveryDispatcher
 from openpulse.sample_monitors import list_sample_monitors
 from openpulse.scripts import run_script_preview
 from openpulse.scheduler import MonitorScheduler
@@ -35,6 +36,7 @@ class MonitorRequest(BaseModel):
     condition: dict[str, Any]
     intervalSeconds: int = Field(default=300, ge=5)
     enabled: bool = True
+    destinationIds: list[str] = []
 
 
 class ScriptPreviewRequest(BaseModel):
@@ -42,6 +44,13 @@ class ScriptPreviewRequest(BaseModel):
     args: list[str] = []
     cwd: str | None = None
     timeoutSeconds: int = 10
+
+
+class DestinationRequest(BaseModel):
+    name: str
+    type: str
+    config: dict[str, Any]
+    enabled: bool = True
 
 
 def create_app(
@@ -52,6 +61,7 @@ def create_app(
     start_scheduler: bool = True,
     scheduler_poll_seconds: int = 5,
     scheduler_max_concurrent_checks: int = 5,
+    start_delivery_dispatcher: bool = True,
 ) -> FastAPI:
     db = Database(db_path)
     db.initialize()
@@ -64,12 +74,17 @@ def create_app(
         poll_seconds=scheduler_poll_seconds,
         max_concurrent_checks=scheduler_max_concurrent_checks,
     )
+    delivery_dispatcher = DeliveryDispatcher(db)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         if start_scheduler:
             scheduler.start()
+        if start_delivery_dispatcher:
+            delivery_dispatcher.start()
         yield
+        if start_delivery_dispatcher:
+            await delivery_dispatcher.stop()
         if start_scheduler:
             await scheduler.stop()
         await browser_controller.close()
@@ -144,6 +159,7 @@ def create_app(
                 "condition": request.condition,
                 "intervalSeconds": request.intervalSeconds,
                 "enabled": request.enabled,
+                "destinationIds": request.destinationIds,
             }
         )
         if target.get("sourceType") == "script" and target.get("selection", {}).get("mode") == "items":
@@ -153,6 +169,33 @@ def create_app(
     @app.get("/api/monitors")
     async def list_monitors() -> list[dict[str, Any]]:
         return db.list_monitors()
+
+    @app.get("/api/destinations")
+    async def list_destinations() -> list[dict[str, Any]]:
+        return db.list_destinations()
+
+    @app.post("/api/destinations")
+    async def create_destination(request: DestinationRequest) -> dict[str, Any]:
+        if request.type not in {"webhook", "command"}:
+            raise HTTPException(status_code=400, detail="Destination type must be webhook or command")
+        return db.create_destination(
+            {
+                "name": request.name,
+                "type": request.type,
+                "config": request.config,
+                "enabled": request.enabled,
+            }
+        )
+
+    @app.delete("/api/destinations/{destination_id}")
+    async def delete_destination(destination_id: str) -> dict[str, str]:
+        if not db.delete_destination(destination_id):
+            raise HTTPException(status_code=404, detail=f"Destination not found: {destination_id}")
+        return {"status": "deleted"}
+
+    @app.get("/api/deliveries")
+    async def list_deliveries() -> list[dict[str, Any]]:
+        return db.list_deliveries()
 
     @app.delete("/api/monitors/{monitor_id}")
     async def delete_monitor(monitor_id: str) -> dict[str, str]:

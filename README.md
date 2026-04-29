@@ -43,6 +43,25 @@ OpenPulse checks use the already-launched app browser session when one exists. T
 
 If a site serves a bot/security verification page, logs show `blocked` with `security_verification` instead of a generic missing target.
 
+## Agent Destinations
+
+OpenPulse can push matched events to agents without keeping an LLM in the polling loop. Create destinations from the `Agents` sidebar view, then select one or more destinations when saving a monitor.
+
+Supported destination types:
+
+- Webhook: sends the OpenPulse event JSON to a local or remote HTTP endpoint.
+- Local command: runs a command without shell mode and sends the OpenPulse event JSON to stdin.
+
+If a monitor has no destinations selected, matched events stay local in the event log only. With multiple agents, routing is explicit: each monitor stores the destination IDs it should wake.
+
+For CLIs that do not expose native webhooks, use the bundled bridge:
+
+```bash
+python3 bridges/openpulse_agent_bridge.py --port 8765 --prompt-mode arg -- codex exec
+```
+
+Then add a webhook destination pointed at `http://127.0.0.1:8765`.
+
 ## Script Monitors
 
 OpenPulse can run local scripts on the same scheduler. The setup flow mirrors website monitoring:

@@ -76,6 +76,7 @@ class CheckEngine:
                 "details": extracted.details,
             }
         )
+        self._enqueue_delivery_if_needed(log, monitor)
         self._record_lifecycle(monitor_id, status, extracted.value, check_started, message)
         return log
 
@@ -174,6 +175,7 @@ class CheckEngine:
                 "details": {"selection": selection, "execution": preview.get("execution")},
             }
         )
+        self._enqueue_delivery_if_needed(log, monitor)
         target.setdefault("selection", {})["initialValue"] = current_value
         self.db.update_monitor_target(monitor["id"], target)
         self._record_lifecycle(monitor["id"], status, current_value, check_started, log["message"])
@@ -241,38 +243,38 @@ class CheckEngine:
 
         logs = []
         for item in new_items:
-            logs.append(
-                self.db.create_log(
-                    {
-                        "monitorId": monitor["id"],
-                        "status": "matched",
-                        **_event_fields(
-                            source_type="script",
-                            status="matched",
-                            message="new_item_detected",
-                            previous_value=None,
-                            current_value=item["id"],
-                            condition_matched=True,
-                            evidence={
-                                "item": item["item"],
-                                "selection": selection,
-                                "display": _item_display(item["item"], selection),
-                                "url": _item_field(item["item"], selection.get("urlField")),
-                            },
-                        ),
-                        "previousValue": None,
-                        "currentValue": item["id"],
-                        "conditionMatched": True,
-                        "message": "new_item_detected",
-                        "details": {
+            log = self.db.create_log(
+                {
+                    "monitorId": monitor["id"],
+                    "status": "matched",
+                    **_event_fields(
+                        source_type="script",
+                        status="matched",
+                        message="new_item_detected",
+                        previous_value=None,
+                        current_value=item["id"],
+                        condition_matched=True,
+                        evidence={
                             "item": item["item"],
                             "selection": selection,
                             "display": _item_display(item["item"], selection),
                             "url": _item_field(item["item"], selection.get("urlField")),
                         },
-                    }
-                )
+                    ),
+                    "previousValue": None,
+                    "currentValue": item["id"],
+                    "conditionMatched": True,
+                    "message": "new_item_detected",
+                    "details": {
+                        "item": item["item"],
+                        "selection": selection,
+                        "display": _item_display(item["item"], selection),
+                        "url": _item_field(item["item"], selection.get("urlField")),
+                    },
+                }
             )
+            self._enqueue_delivery_if_needed(log, monitor)
+            logs.append(log)
         self.db.add_script_seen_items(monitor["id"], new_items)
         self._record_lifecycle(monitor["id"], "matched", str(len(new_items)), check_started, "new_items_detected")
         return {
@@ -299,6 +301,11 @@ class CheckEngine:
             duration_ms=max(0, round((perf_counter() - check_started) * 1000)),
             error=error,
         )
+
+    def _enqueue_delivery_if_needed(self, log: dict[str, Any], monitor: dict[str, Any]) -> None:
+        if log.get("status") != "matched" and not log.get("conditionMatched"):
+            return
+        self.db.enqueue_deliveries_for_log(log, monitor)
 
 
 def _item_field(item: dict[str, Any], field: str | None) -> Any:

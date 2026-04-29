@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenPulse</title>
-    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-4" />
+    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-6" />
   </head>
   <body>
     <div class="appFrame">
@@ -63,6 +63,13 @@
               <span>
                 <strong>Event logs</strong>
                 <small>Review outcomes</small>
+              </span>
+            </button>
+            <button id="destinationsViewButton" class="navItem" type="button">
+              <span class="navIcon">A</span>
+              <span>
+                <strong>Agents</strong>
+                <small>Event destinations</small>
               </span>
             </button>
           </div>
@@ -175,6 +182,10 @@
                 Check interval seconds
                 <input id="intervalSeconds" type="number" min="5" value="300" />
               </label>
+              <div class="fieldGroup">
+                <div class="fieldLabel">Send matched events to</div>
+                <div id="destinationPicker" class="destinationPicker"></div>
+              </div>
               <button type="submit" class="saveButton">Save monitor</button>
             </form>
           </div>
@@ -218,9 +229,57 @@
             <div id="logsList" class="list"></div>
           </div>
         </section>
+
+        <section id="destinationsView" class="focusView hidden">
+          <div id="destinations" class="infoPanel">
+            <div class="sectionHeader">
+              <div>
+                <p class="kicker">Agents</p>
+                <h2>Event destinations</h2>
+              </div>
+              <button id="refreshDestinationsButton" class="ghost">Refresh</button>
+            </div>
+            <form id="destinationForm" class="destinationForm">
+              <label>
+                Name
+                <input id="destinationName" type="text" placeholder="Codex bridge" />
+              </label>
+              <label>
+                Type
+                <select id="destinationType">
+                  <option value="webhook">Webhook</option>
+                  <option value="command">Local command</option>
+                </select>
+              </label>
+              <label>
+                URL or command
+                <input id="destinationEndpoint" type="text" placeholder="http://127.0.0.1:8765/events" />
+              </label>
+              <label>
+                Arguments
+                <textarea id="destinationArgs" rows="3" placeholder="One argument per line for command destinations"></textarea>
+              </label>
+              <label>
+                Run from folder
+                <input id="destinationCwd" type="text" placeholder="/Users/mmor/agents" />
+              </label>
+              <label>
+                Secret
+                <input id="destinationSecret" type="text" placeholder="Optional bearer token for webhook" />
+              </label>
+              <label>
+                Timeout seconds
+                <input id="destinationTimeout" type="number" min="1" value="30" />
+              </label>
+              <button type="submit">Add destination</button>
+            </form>
+            <p id="destinationStatus" class="status">Create a webhook or local command destination, then choose it when saving a monitor.</p>
+            <div id="destinationsList" class="list"></div>
+          </div>
+        </section>
       </main>
     </div>
 
-    <script type="module" src="/static/app.js?v=codex-shell-4"></script>
+    <script type="module" src="/static/app.js?v=codex-shell-6"></script>
   </body>
 </html>

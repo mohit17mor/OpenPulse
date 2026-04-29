@@ -131,12 +131,53 @@ def _structured_event_logs(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "logs", "action_hint", "text")
 
 
+def _event_destinations(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        create table if not exists destinations (
+            id text primary key,
+            name text not null,
+            type text not null,
+            config_json text not null,
+            enabled integer not null default 1,
+            created_at text not null
+        );
+
+        create table if not exists monitor_destinations (
+            monitor_id text not null,
+            destination_id text not null,
+            primary key(monitor_id, destination_id),
+            foreign key(monitor_id) references monitors(id),
+            foreign key(destination_id) references destinations(id)
+        );
+
+        create table if not exists event_deliveries (
+            id text primary key,
+            log_id text not null,
+            monitor_id text,
+            destination_id text not null,
+            status text not null,
+            attempts integer not null default 0,
+            next_attempt_at text not null,
+            last_error text,
+            response_status integer,
+            payload_json text not null,
+            created_at text not null,
+            delivered_at text,
+            foreign key(log_id) references logs(id),
+            foreign key(destination_id) references destinations(id)
+        );
+        """
+    )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "initial_schema", _initial_schema),
     (2, "script_seen_items", _script_seen_items),
     (3, "monitor_lifecycle_state", _monitor_lifecycle_state),
     (4, "scheduler_check_state", _scheduler_check_state),
     (5, "structured_event_logs", _structured_event_logs),
+    (6, "event_destinations", _event_destinations),
 ]
 
 CURRENT_SCHEMA_VERSION = MIGRATIONS[-1][0]

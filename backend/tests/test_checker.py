@@ -56,6 +56,44 @@ async def test_check_engine_logs_matched_condition(tmp_path):
     assert updated["consecutiveFailures"] == 0
 
 
+async def test_check_engine_enqueues_delivery_for_matched_monitor_destination(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    destination = db.create_destination(
+        {
+            "name": "Agent bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/events"},
+            "enabled": True,
+        }
+    )
+    monitor = db.create_monitor(
+        {
+            "name": "Price drop",
+            "url": "http://example.test/product",
+            "target": {
+                "semanticType": "price",
+                "initialValue": "$129.00",
+                "selector": "#price",
+            },
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 300,
+            "enabled": True,
+            "destinationIds": [destination["id"]],
+        }
+    )
+    engine = CheckEngine(db, FakeExtractor(ExtractedValue(found=True, value="$89.00", details={"selector": "#price"})))
+
+    result = await engine.run_check(monitor["id"])
+
+    deliveries = db.list_pending_deliveries()
+    assert result["status"] == "matched"
+    assert len(deliveries) == 1
+    assert deliveries[0]["destinationId"] == destination["id"]
+    assert deliveries[0]["payload"]["type"] == "openpulse.monitor.condition_matched"
+    assert deliveries[0]["payload"]["data"]["monitor"]["id"] == monitor["id"]
+
+
 async def test_check_engine_logs_missing_target(tmp_path):
     db = Database(tmp_path / "openpulse.db")
     db.initialize()

@@ -44,6 +44,69 @@ def test_monitor_api_saves_and_checks_monitor(tmp_path):
     assert logs_response.json()[0]["currentValue"] == "$89.00"
 
 
+def test_monitor_api_saves_destination_routing(tmp_path):
+    app = create_app(
+        db_path=tmp_path / "openpulse.db",
+        extractor=FakeExtractor(),
+        start_scheduler=False,
+        start_delivery_dispatcher=False,
+    )
+    client = TestClient(app)
+    destination = client.post(
+        "/api/destinations",
+        json={
+            "name": "Agent bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/events"},
+            "enabled": True,
+        },
+    ).json()
+
+    response = client.post(
+        "/api/monitors",
+        json={
+            "name": "Price drop",
+            "url": "http://example.test/product",
+            "target": {
+                "semanticType": "price",
+                "initialValue": "$129.00",
+                "selector": "#price",
+            },
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 300,
+            "destinationIds": [destination["id"]],
+        },
+    )
+    monitor_id = response.json()["id"]
+
+    check_response = client.post(f"/api/monitors/{monitor_id}/check")
+
+    assert response.status_code == 200
+    assert response.json()["destinationIds"] == [destination["id"]]
+    assert check_response.json()["status"] == "matched"
+    assert client.get("/api/deliveries").json()[0]["destinationId"] == destination["id"]
+
+
+def test_destination_api_creates_lists_and_deletes_destination(tmp_path):
+    app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/api/destinations",
+        json={
+            "name": "Local command",
+            "type": "command",
+            "config": {"command": "python3", "args": ["agent.py"]},
+            "enabled": True,
+        },
+    )
+    destination_id = create_response.json()["id"]
+
+    assert create_response.status_code == 200
+    assert client.get("/api/destinations").json()[0]["name"] == "Local command"
+    assert client.delete(f"/api/destinations/{destination_id}").json() == {"status": "deleted"}
+
+
 def test_monitor_api_deletes_monitor(tmp_path):
     app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
     client = TestClient(app)

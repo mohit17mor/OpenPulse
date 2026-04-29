@@ -5,6 +5,7 @@ const state = {
   scriptPreview: null,
   scriptSelection: null,
   sampleMonitors: [],
+  destinations: [],
   monitors: [],
   logs: []
 };
@@ -35,12 +36,14 @@ function setView(view) {
   $("samplesView").classList.toggle("hidden", view !== "samples");
   $("monitorsView").classList.toggle("hidden", view !== "monitors");
   $("logsView").classList.toggle("hidden", view !== "logs");
+  $("destinationsView").classList.toggle("hidden", view !== "destinations");
 
   $("websiteSourceButton").classList.toggle("active", view === "website");
   $("scriptSourceButton").classList.toggle("active", view === "script");
   $("samplesViewButton").classList.toggle("active", view === "samples");
   $("monitorsViewButton").classList.toggle("active", view === "monitors");
   $("logsViewButton").classList.toggle("active", view === "logs");
+  $("destinationsViewButton").classList.toggle("active", view === "destinations");
 
   if (view === "website" || view === "script") {
     setSource(view);
@@ -55,6 +58,13 @@ function setView(view) {
     $("mainSubtitle").textContent = "Review monitor health, run checks, and delete rules you no longer need.";
     refreshMonitors();
   } else {
+    if (view === "destinations") {
+      $("mainCrumb").textContent = "Workspace";
+      $("mainTitle").textContent = "Agents";
+      $("mainSubtitle").textContent = "Send matched monitor events to webhooks, bridges, or local commands.";
+      refreshDestinations();
+      return;
+    }
     $("mainCrumb").textContent = "Workspace";
     $("mainTitle").textContent = "Event logs";
     $("mainSubtitle").textContent = "Inspect recent check outcomes, matches, missing targets, and script errors.";
@@ -434,6 +444,7 @@ function renderMonitors() {
             ${monitor.consecutiveFailures > 0 ? `<span class="statePill warning">${monitor.consecutiveFailures} failures</span>` : ""}
           </div>
           <div class="itemMeta">${escapeHtml(monitorSummary(monitor))}</div>
+          <div class="itemMeta">Destinations: ${escapeHtml(destinationNames(monitor.destinationIds).join(", ") || "Log only")}</div>
           <div class="itemMeta">Condition: ${escapeHtml(JSON.stringify(monitor.condition))}</div>
           <div class="stateGrid">
             <div>
@@ -478,6 +489,11 @@ function renderMonitors() {
       await refreshMonitors();
     });
   });
+}
+
+function destinationNames(destinationIds = []) {
+  const names = new Map(state.destinations.map((destination) => [destination.id, destination.name]));
+  return destinationIds.map((id) => names.get(id) || id);
 }
 
 function monitorSummary(monitor) {
@@ -553,6 +569,75 @@ function renderLogs() {
     .join("");
 }
 
+function renderDestinations() {
+  renderDestinationPicker();
+  const container = $("destinationsList");
+  if (state.destinations.length === 0) {
+    container.innerHTML = '<p class="subtle">No destinations created yet.</p>';
+    return;
+  }
+  container.innerHTML = state.destinations
+    .map(
+      (destination) => `
+        <article class="item">
+          <div class="itemTitle">
+            <span>${escapeHtml(destination.name)}</span>
+            <span class="actions">
+              <button class="danger" data-delete-destination="${escapeHtml(destination.id)}">Delete</button>
+            </span>
+          </div>
+          <div class="stateRow">
+            <span class="statePill">${escapeHtml(destination.type)}</span>
+            ${destination.enabled ? "" : '<span class="statePill disabled">disabled</span>'}
+          </div>
+          <div class="itemMeta">${escapeHtml(destinationSummary(destination))}</div>
+        </article>
+      `
+    )
+    .join("");
+  container.querySelectorAll("[data-delete-destination]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const destination = state.destinations.find((item) => item.id === button.dataset.deleteDestination);
+      if (!window.confirm(`Delete ${destination?.name || "this destination"}?`)) return;
+      await api(`/api/destinations/${button.dataset.deleteDestination}`, { method: "DELETE" });
+      $("destinationStatus").textContent = "Destination deleted.";
+      await refreshDestinations();
+      await refreshMonitors();
+    });
+  });
+}
+
+function destinationSummary(destination) {
+  if (destination.type === "webhook") return destination.config?.url || "Webhook";
+  return [destination.config?.command, ...(destination.config?.args || [])].filter(Boolean).join(" ") || "Local command";
+}
+
+function renderDestinationPicker() {
+  const container = $("destinationPicker");
+  if (!container) return;
+  if (state.destinations.length === 0) {
+    container.innerHTML = '<p class="subtle">Log only. Add agents from the Agents view.</p>';
+    return;
+  }
+  container.innerHTML = state.destinations
+    .map(
+      (destination) => `
+        <label class="checkRow">
+          <input type="checkbox" value="${escapeHtml(destination.id)}" />
+          <span>
+            <strong>${escapeHtml(destination.name)}</strong>
+            <small>${escapeHtml(destination.type)}</small>
+          </span>
+        </label>
+      `
+    )
+    .join("");
+}
+
+function selectedDestinationIds() {
+  return Array.from($("destinationPicker").querySelectorAll("input[type='checkbox']:checked")).map((input) => input.value);
+}
+
 function logDisplayValue(log) {
   return log.details?.display || log.currentValue || "-";
 }
@@ -572,6 +657,11 @@ async function refreshSelection() {
 async function refreshMonitors() {
   state.monitors = await api("/api/monitors");
   renderMonitors();
+}
+
+async function refreshDestinations() {
+  state.destinations = await api("/api/destinations");
+  renderDestinations();
 }
 
 async function refreshSamples() {
@@ -598,6 +688,7 @@ $("scriptSourceButton").addEventListener("click", () => setView("script"));
 $("samplesViewButton").addEventListener("click", () => setView("samples"));
 $("monitorsViewButton").addEventListener("click", () => setView("monitors"));
 $("logsViewButton").addEventListener("click", () => setView("logs"));
+$("destinationsViewButton").addEventListener("click", () => setView("destinations"));
 
 $("launchButton").addEventListener("click", async () => {
   setStatus("Launching browser...");
@@ -667,6 +758,7 @@ async function saveWebsiteMonitor() {
       target: state.selection,
       condition: conditionFromForm(),
       intervalSeconds: Number($("intervalSeconds").value || 300),
+      destinationIds: selectedDestinationIds(),
       enabled: true
     })
   });
@@ -703,6 +795,7 @@ async function saveScriptMonitor() {
       target,
       condition: conditionFromForm(),
       intervalSeconds: Number($("intervalSeconds").value || 300),
+      destinationIds: selectedDestinationIds(),
       enabled: true
     })
   });
@@ -713,10 +806,56 @@ async function saveScriptMonitor() {
 $("refreshMonitorsButton").addEventListener("click", refreshMonitors);
 $("refreshLogsButton").addEventListener("click", refreshLogs);
 $("refreshSamplesButton").addEventListener("click", refreshSamples);
+$("refreshDestinationsButton").addEventListener("click", refreshDestinations);
+
+$("destinationType").addEventListener("change", () => {
+  $("destinationEndpoint").placeholder = $("destinationType").value === "webhook"
+    ? "http://127.0.0.1:8765/events"
+    : "python3";
+});
+
+$("destinationForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const type = $("destinationType").value;
+  const endpoint = $("destinationEndpoint").value.trim();
+  if (!endpoint) {
+    $("destinationStatus").textContent = type === "webhook" ? "Enter a webhook URL." : "Enter a command.";
+    return;
+  }
+  const config = type === "webhook"
+    ? {
+        url: endpoint,
+        secret: $("destinationSecret").value.trim() || undefined,
+        timeoutSeconds: Number($("destinationTimeout").value || 10)
+      }
+    : {
+        command: endpoint,
+        args: $("destinationArgs").value.split("\n").map((line) => line.trim()).filter(Boolean),
+        cwd: $("destinationCwd").value.trim() || null,
+        timeoutSeconds: Number($("destinationTimeout").value || 30)
+      };
+  await api("/api/destinations", {
+    method: "POST",
+    body: JSON.stringify({
+      name: $("destinationName").value.trim() || (type === "webhook" ? "Webhook agent" : "Local agent"),
+      type,
+      config,
+      enabled: true
+    })
+  });
+  $("destinationStatus").textContent = "Destination added. Select it when saving a monitor.";
+  $("destinationName").value = "";
+  $("destinationEndpoint").value = "";
+  $("destinationArgs").value = "";
+  $("destinationCwd").value = "";
+  $("destinationSecret").value = "";
+  await refreshDestinations();
+});
 
 setView("website");
 renderSelection();
 await refreshSamples();
+await refreshDestinations();
 await refreshMonitors();
 await refreshLogs();
 setInterval(refreshSelection, 1500);

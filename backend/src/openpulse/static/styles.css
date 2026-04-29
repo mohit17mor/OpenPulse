@@ -406,7 +406,8 @@ h2 {
 }
 
 .scriptForm,
-.ruleForm {
+.ruleForm,
+.destinationForm {
   display: grid;
   gap: 12px;
 }
@@ -415,9 +416,19 @@ h2 {
   grid-template-columns: 1fr 120px;
 }
 
+.destinationForm {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
 .scriptForm label:nth-child(2),
 .scriptForm label:nth-child(3),
 .scriptForm button {
+  grid-column: 1 / -1;
+}
+
+.destinationForm label:nth-child(4),
+.destinationForm button {
   grid-column: 1 / -1;
 }
 
@@ -518,6 +529,51 @@ label {
 
 .saveButton {
   margin-top: 2px;
+}
+
+.fieldGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.fieldLabel {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.destinationPicker {
+  display: grid;
+  gap: 8px;
+}
+
+.checkRow {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 9px 10px;
+}
+
+.checkRow input {
+  width: auto;
+}
+
+.checkRow strong,
+.checkRow small {
+  display: block;
+}
+
+.checkRow strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.checkRow small {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: capitalize;
 }
 
 .list {
@@ -844,7 +900,8 @@ label {
   }
 
   .scriptForm,
-  .itemFieldGrid {
+  .itemFieldGrid,
+  .destinationForm {
     grid-template-columns: 1fr;
   }
 }

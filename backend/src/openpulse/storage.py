@@ -37,6 +37,7 @@ class Database:
 
     def create_monitor(self, payload: dict[str, Any]) -> dict[str, Any]:
         created_at = payload.get("createdAt") or utc_now()
+        destination_ids = list(dict.fromkeys(payload.get("destinationIds") or []))
         monitor = {
             "id": payload.get("id") or str(uuid4()),
             "name": payload["name"],
@@ -54,6 +55,7 @@ class Database:
             "lastValue": payload.get("lastValue"),
             "consecutiveFailures": int(payload.get("consecutiveFailures") or 0),
             "checkStartedAt": payload.get("checkStartedAt"),
+            "destinationIds": destination_ids,
         }
         with self.connect() as conn:
             conn.execute(
@@ -85,12 +87,16 @@ class Database:
                     monitor["checkStartedAt"],
                 ),
             )
+            self._set_monitor_destinations(conn, monitor["id"], destination_ids)
         return monitor
 
     def list_monitors(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute("select * from monitors order by created_at desc").fetchall()
-        return [self._monitor_from_row(row) for row in rows]
+            monitors = [self._monitor_from_row(row) for row in rows]
+            for monitor in monitors:
+                monitor["destinationIds"] = self._list_monitor_destination_ids(conn, monitor["id"])
+        return monitors
 
     def list_due_monitors(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
         current_time = now or datetime.now(UTC)
@@ -119,7 +125,11 @@ class Database:
     def get_monitor(self, monitor_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute("select * from monitors where id = ?", (monitor_id,)).fetchone()
-        return self._monitor_from_row(row) if row else None
+            if row is None:
+                return None
+            monitor = self._monitor_from_row(row)
+            monitor["destinationIds"] = self._list_monitor_destination_ids(conn, monitor["id"])
+        return monitor
 
     def mark_checked(self, monitor_id: str) -> None:
         self.record_check_result(
@@ -197,8 +207,65 @@ class Database:
                 (json.dumps(target), monitor_id),
             )
 
+    def create_destination(self, payload: dict[str, Any]) -> dict[str, Any]:
+        destination = {
+            "id": payload.get("id") or str(uuid4()),
+            "name": payload["name"],
+            "type": payload["type"],
+            "config": payload.get("config") or {},
+            "enabled": bool(payload.get("enabled", True)),
+            "createdAt": payload.get("createdAt") or utc_now(),
+        }
+        with self.connect() as conn:
+            conn.execute(
+                """
+                insert into destinations (id, name, type, config_json, enabled, created_at)
+                values (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    destination["id"],
+                    destination["name"],
+                    destination["type"],
+                    json.dumps(destination["config"]),
+                    1 if destination["enabled"] else 0,
+                    destination["createdAt"],
+                ),
+            )
+        return destination
+
+    def list_destinations(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("select * from destinations order by created_at desc").fetchall()
+        return [self._destination_from_row(row) for row in rows]
+
+    def get_destination(self, destination_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("select * from destinations where id = ?", (destination_id,)).fetchone()
+        return self._destination_from_row(row) if row else None
+
+    def delete_destination(self, destination_id: str) -> bool:
+        with self.connect() as conn:
+            conn.execute("delete from monitor_destinations where destination_id = ?", (destination_id,))
+            cursor = conn.execute("delete from destinations where id = ?", (destination_id,))
+            return cursor.rowcount > 0
+
+    def set_monitor_destinations(self, monitor_id: str, destination_ids: list[str]) -> None:
+        with self.connect() as conn:
+            self._set_monitor_destinations(conn, monitor_id, list(dict.fromkeys(destination_ids)))
+
+    def list_monitor_destination_ids(self, monitor_id: str) -> list[str]:
+        with self.connect() as conn:
+            return self._list_monitor_destination_ids(conn, monitor_id)
+
     def delete_monitor(self, monitor_id: str) -> bool:
         with self.connect() as conn:
+            log_ids = [
+                row["id"]
+                for row in conn.execute("select id from logs where monitor_id = ?", (monitor_id,)).fetchall()
+            ]
+            if log_ids:
+                conn.executemany("delete from event_deliveries where log_id = ?", [(log_id,) for log_id in log_ids])
+            conn.execute("delete from monitor_destinations where monitor_id = ?", (monitor_id,))
             conn.execute("delete from logs where monitor_id = ?", (monitor_id,))
             conn.execute("delete from script_seen_items where monitor_id = ?", (monitor_id,))
             cursor = conn.execute("delete from monitors where id = ?", (monitor_id,))
@@ -230,6 +297,122 @@ class Database:
                 (monitor_id,),
             ).fetchall()
         return {row["item_id"] for row in rows}
+
+    def enqueue_deliveries_for_log(self, log: dict[str, Any], monitor: dict[str, Any]) -> list[dict[str, Any]]:
+        destination_ids = monitor.get("destinationIds") or self.list_monitor_destination_ids(monitor["id"])
+        if not destination_ids:
+            return []
+        now = utc_now()
+        deliveries = []
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"select * from destinations where enabled = 1 and id in ({','.join('?' for _ in destination_ids)})",
+                destination_ids,
+            ).fetchall()
+            destinations = [self._destination_from_row(row) for row in rows]
+            for destination in destinations:
+                delivery = {
+                    "id": str(uuid4()),
+                    "logId": log["id"],
+                    "monitorId": monitor["id"],
+                    "destinationId": destination["id"],
+                    "status": "pending",
+                    "attempts": 0,
+                    "nextAttemptAt": now,
+                    "lastError": None,
+                    "responseStatus": None,
+                    "payload": build_event_payload(log, monitor),
+                    "createdAt": now,
+                    "deliveredAt": None,
+                }
+                deliveries.append(delivery)
+            conn.executemany(
+                """
+                insert into event_deliveries (
+                    id, log_id, monitor_id, destination_id, status, attempts,
+                    next_attempt_at, last_error, response_status, payload_json,
+                    created_at, delivered_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        delivery["id"],
+                        delivery["logId"],
+                        delivery["monitorId"],
+                        delivery["destinationId"],
+                        delivery["status"],
+                        delivery["attempts"],
+                        delivery["nextAttemptAt"],
+                        delivery["lastError"],
+                        delivery["responseStatus"],
+                        json.dumps(delivery["payload"]),
+                        delivery["createdAt"],
+                        delivery["deliveredAt"],
+                    )
+                    for delivery in deliveries
+                ],
+            )
+        return deliveries
+
+    def list_pending_deliveries(self, *, limit: int = 25, now: datetime | None = None) -> list[dict[str, Any]]:
+        current_time = (now or datetime.now(UTC)).isoformat()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                select * from event_deliveries
+                where status = 'pending' and next_attempt_at <= ?
+                order by created_at
+                limit ?
+                """,
+                (current_time, limit),
+            ).fetchall()
+        return [self._delivery_from_row(row) for row in rows]
+
+    def list_deliveries(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("select * from event_deliveries order by created_at desc limit ?", (limit,)).fetchall()
+        return [self._delivery_from_row(row) for row in rows]
+
+    def mark_delivery_sending(self, delivery_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute("update event_deliveries set status = 'sending' where id = ?", (delivery_id,))
+
+    def mark_delivery_delivered(self, delivery_id: str, *, response_status: int | None = None) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update event_deliveries
+                set status = 'delivered',
+                    delivered_at = ?,
+                    response_status = ?,
+                    last_error = null
+                where id = ?
+                """,
+                (utc_now(), response_status, delivery_id),
+            )
+
+    def mark_delivery_failed(self, delivery_id: str, *, error: str, response_status: int | None = None) -> None:
+        with self.connect() as conn:
+            row = conn.execute("select attempts from event_deliveries where id = ?", (delivery_id,)).fetchone()
+            if row is None:
+                return
+            attempts = int(row["attempts"] or 0) + 1
+            retry_delay_seconds = min(300, 2**attempts)
+            next_attempt_at = (datetime.now(UTC) + timedelta(seconds=retry_delay_seconds)).isoformat()
+            status = "failed" if attempts >= 3 else "pending"
+            conn.execute(
+                """
+                update event_deliveries
+                set status = ?,
+                    attempts = ?,
+                    next_attempt_at = ?,
+                    last_error = ?,
+                    response_status = ?
+                where id = ?
+                """,
+                (status, attempts, next_attempt_at, error, response_status, delivery_id),
+            )
 
     def create_log(self, payload: dict[str, Any]) -> dict[str, Any]:
         status = payload["status"]
@@ -308,7 +491,7 @@ class Database:
 
     @staticmethod
     def _monitor_from_row(row: sqlite3.Row) -> dict[str, Any]:
-        return {
+        monitor = {
             "id": row["id"],
             "name": row["name"],
             "url": row["url"],
@@ -325,7 +508,9 @@ class Database:
             "lastValue": row["last_value"],
             "consecutiveFailures": row["consecutive_failures"],
             "checkStartedAt": row["check_started_at"],
+            "destinationIds": [],
         }
+        return monitor
 
     @staticmethod
     def _log_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -348,6 +533,53 @@ class Database:
             "details": json.loads(row["details_json"]),
             "createdAt": row["created_at"],
         }
+
+    @staticmethod
+    def _destination_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "type": row["type"],
+            "config": json.loads(row["config_json"]),
+            "enabled": bool(row["enabled"]),
+            "createdAt": row["created_at"],
+        }
+
+    @staticmethod
+    def _delivery_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "logId": row["log_id"],
+            "monitorId": row["monitor_id"],
+            "destinationId": row["destination_id"],
+            "status": row["status"],
+            "attempts": row["attempts"],
+            "nextAttemptAt": row["next_attempt_at"],
+            "lastError": row["last_error"],
+            "responseStatus": row["response_status"],
+            "payload": json.loads(row["payload_json"]),
+            "createdAt": row["created_at"],
+            "deliveredAt": row["delivered_at"],
+        }
+
+    def _set_monitor_destinations(
+        self,
+        conn: sqlite3.Connection,
+        monitor_id: str,
+        destination_ids: list[str],
+    ) -> None:
+        conn.execute("delete from monitor_destinations where monitor_id = ?", (monitor_id,))
+        conn.executemany(
+            "insert or ignore into monitor_destinations (monitor_id, destination_id) values (?, ?)",
+            [(monitor_id, destination_id) for destination_id in destination_ids],
+        )
+
+    def _list_monitor_destination_ids(self, conn: sqlite3.Connection, monitor_id: str) -> list[str]:
+        rows = conn.execute(
+            "select destination_id from monitor_destinations where monitor_id = ? order by destination_id",
+            (monitor_id,),
+        ).fetchall()
+        return [row["destination_id"] for row in rows]
 
 
 def _default_event_type(status: str, message: str, condition_matched: bool) -> str:
@@ -405,3 +637,43 @@ def _default_summary(
     if event_type in {"script_failed", "script_timeout", "scheduler_error", "check_failed"}:
         return f"Check failed with reason: {message}."
     return f"Check completed. Current value: {current_value or '-'}."
+
+
+def build_event_payload(log: dict[str, Any], monitor: dict[str, Any]) -> dict[str, Any]:
+    event_type = log.get("eventType") or _default_event_type(
+        log["status"],
+        log["message"],
+        bool(log.get("conditionMatched")),
+    )
+    return {
+        "specversion": "1.0",
+        "id": log["id"],
+        "source": f"openpulse://monitor/{monitor['id']}",
+        "type": f"openpulse.monitor.{event_type}",
+        "time": log["createdAt"],
+        "subject": monitor["name"],
+        "datacontenttype": "application/json",
+        "data": {
+            "monitor": {
+                "id": monitor["id"],
+                "name": monitor["name"],
+                "url": monitor["url"],
+                "sourceType": (monitor.get("target") or {}).get("sourceType") or "website",
+                "condition": monitor["condition"],
+            },
+            "event": {
+                "id": log["id"],
+                "status": log["status"],
+                "eventType": event_type,
+                "severity": log.get("severity"),
+                "title": log.get("title"),
+                "summary": log.get("summary"),
+                "previousValue": log.get("previousValue"),
+                "currentValue": log.get("currentValue"),
+                "conditionMatched": bool(log.get("conditionMatched")),
+                "reasonCode": log.get("reasonCode") or log.get("message"),
+                "createdAt": log["createdAt"],
+            },
+            "evidence": log.get("evidence") or log.get("details") or {},
+        },
+    }

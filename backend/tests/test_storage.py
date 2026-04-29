@@ -276,3 +276,56 @@ def test_database_stores_script_seen_items_once(tmp_path):
     )
 
     assert db.list_script_seen_item_ids(monitor["id"]) == {"a", "b"}
+
+
+def test_database_routes_monitor_events_to_selected_destinations(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    first = db.create_destination(
+        {
+            "name": "Codex bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/codex"},
+            "enabled": True,
+        }
+    )
+    second = db.create_destination(
+        {
+            "name": "Claude bridge",
+            "type": "command",
+            "config": {"command": "claude", "args": ["-p"]},
+            "enabled": True,
+        }
+    )
+    monitor = db.create_monitor(
+        {
+            "name": "Price watch",
+            "url": "https://example.com/product",
+            "target": {"initialValue": "$129.00"},
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 30,
+            "enabled": True,
+            "destinationIds": [first["id"]],
+        }
+    )
+    log = db.create_log(
+        {
+            "monitorId": monitor["id"],
+            "status": "matched",
+            "sourceType": "website",
+            "previousValue": "$129.00",
+            "currentValue": "$89.00",
+            "conditionMatched": True,
+            "message": "number_less_than",
+            "details": {},
+        }
+    )
+
+    deliveries = db.enqueue_deliveries_for_log(log, monitor)
+
+    assert db.get_monitor(monitor["id"])["destinationIds"] == [first["id"]]
+    assert [delivery["destinationId"] for delivery in deliveries] == [first["id"]]
+    assert second["id"] not in [delivery["destinationId"] for delivery in deliveries]
+    pending = db.list_pending_deliveries()
+    assert pending[0]["payload"]["data"]["monitor"]["name"] == "Price watch"
+    assert pending[0]["payload"]["data"]["event"]["currentValue"] == "$89.00"
