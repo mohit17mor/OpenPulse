@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+import shutil
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import suppress
 from typing import Any
@@ -80,6 +83,16 @@ class DeliveryDispatcher:
         raise ValueError(f"Unsupported destination type: {destination['type']}")
 
 
+async def check_destination_health(destination: dict[str, Any]) -> dict[str, Any]:
+    if not destination.get("enabled", True):
+        return {"ok": False, "status": "disabled", "message": "Destination is disabled."}
+    if destination["type"] == "command":
+        return await asyncio.to_thread(_check_command_health, destination["config"])
+    if destination["type"] == "webhook":
+        return await asyncio.to_thread(_check_webhook_health, destination["config"])
+    return {"ok": False, "status": "unknown", "message": f"Unsupported destination type: {destination['type']}"}
+
+
 async def _send_command(config: dict[str, Any], payload: dict[str, Any]) -> int | None:
     command = config.get("command")
     if not command:
@@ -123,3 +136,45 @@ def _send_webhook(config: dict[str, Any], payload: dict[str, Any]) -> int:
             return response.status
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"webhook_http_{exc.code}") from exc
+
+
+def _check_command_health(config: dict[str, Any]) -> dict[str, Any]:
+    command = config.get("command")
+    if not command:
+        return {"ok": False, "status": "offline", "message": "Command is missing."}
+    command_text = str(command)
+    found = shutil.which(command_text) if "/" not in command_text else Path(command_text).exists()
+    if not found:
+        return {"ok": False, "status": "offline", "message": f"Command not found: {command_text}"}
+    return {"ok": True, "status": "online", "message": "Command is available."}
+
+
+def _check_webhook_health(config: dict[str, Any]) -> dict[str, Any]:
+    url = config.get("healthUrl") or _default_health_url(str(config.get("url") or ""))
+    if not url:
+        return {"ok": False, "status": "offline", "message": "Webhook URL is missing."}
+    headers = {}
+    if config.get("secret"):
+        headers["Authorization"] = f"Bearer {config['secret']}"
+    request = urllib.request.Request(str(url), method="GET", headers=headers)
+    timeout_seconds = int(config.get("healthTimeoutSeconds") or min(int(config.get("timeoutSeconds") or 5), 5))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            if 200 <= response.status < 500:
+                return {"ok": True, "status": "online", "message": f"Reachable with HTTP {response.status}."}
+            return {"ok": False, "status": "offline", "message": f"Health check returned HTTP {response.status}."}
+    except urllib.error.HTTPError as exc:
+        if exc.code < 500:
+            return {"ok": True, "status": "online", "message": f"Reachable with HTTP {exc.code}."}
+        return {"ok": False, "status": "offline", "message": f"Health check returned HTTP {exc.code}."}
+    except Exception as exc:
+        return {"ok": False, "status": "offline", "message": str(exc)}
+
+
+def _default_health_url(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return url
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "/health", "", "", ""))

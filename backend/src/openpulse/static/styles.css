@@ -460,6 +460,59 @@ h2 {
   grid-column: 1 / -1;
 }
 
+.agentIntro {
+  display: grid;
+  margin: -4px 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.agentIntro strong,
+.bridgeSetupPanel strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.agentIntro span,
+.bridgeSetupPanel span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.bridgeSetupPanel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  border: 1px solid #bfd0ea;
+  border-radius: 8px;
+  background: #f5f8ff;
+  padding: 12px;
+}
+
+.bridgeSetupPanel code,
+.bridgeCommandSmall {
+  display: block;
+  border: 1px solid #d5deea;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 9px 10px;
+  overflow-wrap: anywhere;
+}
+
+.bridgeSetupPanel button {
+  justify-self: start;
+}
+
 label {
   display: grid;
   gap: 6px;

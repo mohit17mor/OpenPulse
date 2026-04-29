@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
-from openpulse.delivery import DeliveryDispatcher
+from openpulse.delivery import DeliveryDispatcher, check_destination_health
 from openpulse.sample_monitors import list_sample_monitors
 from openpulse.scripts import run_script_preview
 from openpulse.scheduler import MonitorScheduler
@@ -194,6 +194,14 @@ def create_app(
         if not db.delete_destination(destination_id):
             raise HTTPException(status_code=404, detail=f"Destination not found: {destination_id}")
         return {"status": "deleted"}
+
+    @app.post("/api/destinations/{destination_id}/health")
+    async def destination_health(destination_id: str) -> dict[str, Any]:
+        destination = db.get_destination(destination_id)
+        if destination is None:
+            raise HTTPException(status_code=404, detail=f"Destination not found: {destination_id}")
+        result = await check_destination_health(destination)
+        return {**result, "destinationId": destination_id}
 
     @app.get("/api/deliveries")
     async def list_deliveries() -> list[dict[str, Any]]:

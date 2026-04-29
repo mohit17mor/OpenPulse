@@ -62,7 +62,7 @@ python3 bridges/openpulse_agent_bridge.py --port 8765 --prompt-mode arg -- codex
 
 Then add a webhook destination pointed at `http://127.0.0.1:8765`.
 
-The bridge prints received events, the agent command it starts, and completion/failure status. Agent stdout/stderr is streamed to the bridge terminal by default; add `--capture-output` if you want the bridge to hide command output.
+The `Agents` view includes Codex and Claude bridge presets, shows the bridge command to run, and checks whether each destination is online without waking the agent. The bridge prints received events, the agent command it starts, and completion/failure status. Agent stdout/stderr is streamed to the bridge terminal by default; add `--capture-output` if you want the bridge to hide command output.
 
 ## Script Monitors
 

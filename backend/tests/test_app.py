@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
+from threading import Thread
 
 from openpulse.app import create_app
 from openpulse.checker import ExtractedValue
@@ -111,6 +113,71 @@ def test_destination_api_creates_lists_and_deletes_destination(tmp_path):
     assert create_response.status_code == 200
     assert client.get("/api/destinations").json()[0]["name"] == "Local command"
     assert client.delete(f"/api/destinations/{destination_id}").json() == {"status": "deleted"}
+
+
+def test_destination_health_check_detects_running_webhook(tmp_path):
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), HealthHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
+        client = TestClient(app)
+        destination = client.post(
+            "/api/destinations",
+            json={
+                "name": "Codex bridge",
+                "type": "webhook",
+                "config": {
+                    "url": f"http://127.0.0.1:{server.server_address[1]}",
+                    "healthUrl": f"http://127.0.0.1:{server.server_address[1]}/health",
+                },
+                "enabled": True,
+            },
+        ).json()
+
+        response = client.post(f"/api/destinations/{destination['id']}/health")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["status"] == "online"
+
+
+def test_destination_health_check_reports_down_webhook(tmp_path):
+    app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
+    client = TestClient(app)
+    destination = client.post(
+        "/api/destinations",
+        json={
+            "name": "Missing bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:1", "healthUrl": "http://127.0.0.1:1/health"},
+            "enabled": True,
+        },
+    ).json()
+
+    response = client.post(f"/api/destinations/{destination['id']}/health")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert response.json()["status"] == "offline"
 
 
 def test_monitor_api_deletes_monitor(tmp_path):

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenPulse</title>
-    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-8" />
+    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-9" />
   </head>
   <body>
     <div class="appFrame">
@@ -241,27 +241,51 @@
               </div>
               <button id="refreshDestinationsButton" class="ghost">Refresh</button>
             </div>
+            <div class="agentIntro">
+              <div>
+                <strong>Route matched events to one or more agents.</strong>
+                <span>Each selected destination receives the same event in parallel. Health checks never trigger the agent.</span>
+              </div>
+            </div>
             <form id="destinationForm" class="destinationForm">
+              <label>
+                Agent type
+                <select id="destinationPreset">
+                  <option value="codex">Codex bridge</option>
+                  <option value="claude">Claude bridge</option>
+                  <option value="webhook">Webhook</option>
+                  <option value="command">Advanced local command</option>
+                </select>
+              </label>
               <label>
                 Name
                 <input id="destinationName" type="text" placeholder="Codex bridge" />
               </label>
-              <label>
-                Type
-                <select id="destinationType">
-                  <option value="webhook">Webhook</option>
-                  <option value="command">Local command</option>
-                </select>
+              <label id="destinationPortRow">
+                Bridge port
+                <input id="destinationPort" type="number" min="1" value="8765" />
               </label>
-              <label>
-                URL or command
-                <input id="destinationEndpoint" type="text" placeholder="http://127.0.0.1:8765/events" />
+              <label id="destinationAgentCommandRow">
+                Agent command
+                <input id="destinationAgentCommand" type="text" value="codex exec" />
               </label>
-              <label>
+              <div id="bridgeSetupPanel" class="bridgeSetupPanel">
+                <div>
+                  <strong>Run this bridge command in a terminal</strong>
+                  <span>The bridge keeps listening. OpenPulse will send events to it only when a monitor matches.</span>
+                </div>
+                <code id="bridgeCommandPreview"></code>
+                <button id="copyBridgeCommandButton" type="button" class="secondary">Copy command</button>
+              </div>
+              <label id="destinationEndpointRow">
+                Webhook URL or command
+                <input id="destinationEndpoint" type="text" placeholder="http://127.0.0.1:8765" />
+              </label>
+              <label id="destinationArgsRow">
                 Arguments
                 <textarea id="destinationArgs" rows="3" placeholder="One argument per line for command destinations"></textarea>
               </label>
-              <label>
+              <label id="destinationCwdRow">
                 Run from folder
                 <input id="destinationCwd" type="text" placeholder="/Users/mmor/agents" />
               </label>
@@ -275,13 +299,13 @@
               </label>
               <button type="submit">Add destination</button>
             </form>
-            <p id="destinationStatus" class="status">Create a webhook or local command destination, then choose it when saving a monitor.</p>
+            <p id="destinationStatus" class="status">Choose an agent type, start the bridge if needed, then add the destination.</p>
             <div id="destinationsList" class="list"></div>
           </div>
         </section>
       </main>
     </div>
 
-    <script type="module" src="/static/app.js?v=codex-shell-8"></script>
+    <script type="module" src="/static/app.js?v=codex-shell-9"></script>
   </body>
 </html>

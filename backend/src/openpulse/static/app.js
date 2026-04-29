@@ -6,11 +6,25 @@ const state = {
   scriptSelection: null,
   sampleMonitors: [],
   destinations: [],
+  destinationHealth: {},
   monitors: [],
   logs: []
 };
 
 const $ = (id) => document.getElementById(id);
+
+const AGENT_PRESETS = {
+  codex: {
+    name: "Codex",
+    port: 8765,
+    command: "codex exec"
+  },
+  claude: {
+    name: "Claude",
+    port: 8766,
+    command: "claude -p"
+  }
+};
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -584,18 +598,30 @@ function renderDestinations() {
           <div class="itemTitle">
             <span>${escapeHtml(destination.name)}</span>
             <span class="actions">
+              <button class="secondary" data-check-destination="${escapeHtml(destination.id)}">Check</button>
               <button class="danger" data-delete-destination="${escapeHtml(destination.id)}">Delete</button>
             </span>
           </div>
           <div class="stateRow">
             <span class="statePill">${escapeHtml(destination.type)}</span>
+            ${destinationHealthPill(destination.id)}
             ${destination.enabled ? "" : '<span class="statePill disabled">disabled</span>'}
           </div>
           <div class="itemMeta">${escapeHtml(destinationSummary(destination))}</div>
+          ${destination.config?.bridgeCommand ? `<div class="bridgeCommandSmall">${escapeHtml(destination.config.bridgeCommand)}</div>` : ""}
+          ${destinationHealthMessage(destination.id)}
         </article>
       `
     )
     .join("");
+  container.querySelectorAll("[data-check-destination]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      button.textContent = "Checking...";
+      const result = await api(`/api/destinations/${button.dataset.checkDestination}/health`, { method: "POST" });
+      state.destinationHealth[button.dataset.checkDestination] = result;
+      renderDestinations();
+    });
+  });
   container.querySelectorAll("[data-delete-destination]").forEach((button) => {
     button.addEventListener("click", async () => {
       const destination = state.destinations.find((item) => item.id === button.dataset.deleteDestination);
@@ -609,8 +635,23 @@ function renderDestinations() {
 }
 
 function destinationSummary(destination) {
+  if (destination.config?.agentKind === "codex") return `Codex bridge at ${destination.config?.url}`;
+  if (destination.config?.agentKind === "claude") return `Claude bridge at ${destination.config?.url}`;
   if (destination.type === "webhook") return destination.config?.url || "Webhook";
   return [destination.config?.command, ...(destination.config?.args || [])].filter(Boolean).join(" ") || "Local command";
+}
+
+function destinationHealthPill(destinationId) {
+  const health = state.destinationHealth[destinationId];
+  if (!health) return '<span class="statePill disabled">unknown</span>';
+  const klass = health.ok ? "success" : "error";
+  return `<span class="statePill ${klass}">${escapeHtml(health.status || (health.ok ? "online" : "offline"))}</span>`;
+}
+
+function destinationHealthMessage(destinationId) {
+  const health = state.destinationHealth[destinationId];
+  if (!health || health.ok) return "";
+  return `<div class="eventHint">Destination is not reachable: ${escapeHtml(health.message || "health check failed")}</div>`;
 }
 
 function renderDestinationPicker() {
@@ -627,7 +668,7 @@ function renderDestinationPicker() {
           <input type="checkbox" value="${escapeHtml(destination.id)}" />
           <span>
             <strong>${escapeHtml(destination.name)}</strong>
-            <small>${escapeHtml(destination.type)}</small>
+            <small>${escapeHtml(destination.type)} · ${escapeHtml(state.destinationHealth[destination.id]?.status || "unknown")}</small>
           </span>
         </label>
       `
@@ -666,6 +707,22 @@ async function refreshMonitors() {
 
 async function refreshDestinations() {
   state.destinations = await api("/api/destinations");
+  renderDestinations();
+  await refreshDestinationHealth();
+}
+
+async function refreshDestinationHealth() {
+  if (state.destinations.length === 0) return;
+  const results = await Promise.all(
+    state.destinations.map(async (destination) => {
+      try {
+        return [destination.id, await api(`/api/destinations/${destination.id}/health`, { method: "POST" })];
+      } catch (error) {
+        return [destination.id, { ok: false, status: "offline", message: error.message }];
+      }
+    })
+  );
+  state.destinationHealth = Object.fromEntries(results);
   renderDestinations();
 }
 
@@ -815,36 +872,89 @@ $("refreshLogsButton").addEventListener("click", refreshLogs);
 $("refreshSamplesButton").addEventListener("click", refreshSamples);
 $("refreshDestinationsButton").addEventListener("click", refreshDestinations);
 
-$("destinationType").addEventListener("change", () => {
-  $("destinationEndpoint").placeholder = $("destinationType").value === "webhook"
-    ? "http://127.0.0.1:8765/events"
-    : "python3";
+function bridgeCommand() {
+  const port = Number($("destinationPort").value || 8765);
+  const command = $("destinationAgentCommand").value.trim();
+  return `python3 bridges/openpulse_agent_bridge.py --port ${port} --prompt-mode arg -- ${command}`;
+}
+
+function updateDestinationSetup() {
+  const preset = $("destinationPreset").value;
+  const isBridge = preset === "codex" || preset === "claude";
+  const isWebhook = preset === "webhook";
+  const isCommand = preset === "command";
+  $("destinationPortRow").classList.toggle("hidden", !isBridge);
+  $("destinationAgentCommandRow").classList.toggle("hidden", !isBridge);
+  $("bridgeSetupPanel").classList.toggle("hidden", !isBridge);
+  $("destinationEndpointRow").classList.toggle("hidden", isBridge);
+  $("destinationArgsRow").classList.toggle("hidden", !isCommand);
+  $("destinationCwdRow").classList.toggle("hidden", !isCommand);
+  $("destinationSecret").parentElement.classList.toggle("hidden", isCommand);
+  $("destinationEndpoint").placeholder = isWebhook ? "https://example.com/openpulse-events" : "python3";
+  if (isBridge) {
+    const defaults = AGENT_PRESETS[preset];
+    if (!$("destinationName").value.trim() || Object.values(AGENT_PRESETS).some((item) => item.name === $("destinationName").value.trim())) {
+      $("destinationName").value = defaults.name;
+    }
+    $("destinationPort").value = defaults.port;
+    $("destinationAgentCommand").value = defaults.command;
+    $("bridgeCommandPreview").textContent = bridgeCommand();
+  }
+}
+
+$("destinationPreset").addEventListener("change", updateDestinationSetup);
+$("destinationPort").addEventListener("input", () => {
+  $("bridgeCommandPreview").textContent = bridgeCommand();
+});
+$("destinationAgentCommand").addEventListener("input", () => {
+  $("bridgeCommandPreview").textContent = bridgeCommand();
+});
+$("copyBridgeCommandButton").addEventListener("click", async () => {
+  const command = bridgeCommand();
+  try {
+    await navigator.clipboard.writeText(command);
+    $("destinationStatus").textContent = "Bridge command copied.";
+  } catch (_error) {
+    $("destinationStatus").textContent = command;
+  }
 });
 
 $("destinationForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const type = $("destinationType").value;
-  const endpoint = $("destinationEndpoint").value.trim();
+  const preset = $("destinationPreset").value;
+  const isBridge = preset === "codex" || preset === "claude";
+  const type = preset === "command" ? "command" : "webhook";
+  const port = Number($("destinationPort").value || AGENT_PRESETS[preset]?.port || 8765);
+  const endpoint = isBridge ? `http://127.0.0.1:${port}` : $("destinationEndpoint").value.trim();
   if (!endpoint) {
     $("destinationStatus").textContent = type === "webhook" ? "Enter a webhook URL." : "Enter a command.";
     return;
   }
-  const config = type === "webhook"
+  const config = isBridge
     ? {
         url: endpoint,
+        healthUrl: `${endpoint}/health`,
         secret: $("destinationSecret").value.trim() || undefined,
-        timeoutSeconds: Number($("destinationTimeout").value || 10)
+        timeoutSeconds: Number($("destinationTimeout").value || 120),
+        agentKind: preset,
+        bridgeCommand: bridgeCommand()
       }
-    : {
-        command: endpoint,
-        args: $("destinationArgs").value.split("\n").map((line) => line.trim()).filter(Boolean),
-        cwd: $("destinationCwd").value.trim() || null,
-        timeoutSeconds: Number($("destinationTimeout").value || 30)
-      };
+    : type === "webhook"
+      ? {
+          url: endpoint,
+          secret: $("destinationSecret").value.trim() || undefined,
+          timeoutSeconds: Number($("destinationTimeout").value || 10)
+        }
+      : {
+          command: endpoint,
+          args: $("destinationArgs").value.split("\n").map((line) => line.trim()).filter(Boolean),
+          cwd: $("destinationCwd").value.trim() || null,
+          timeoutSeconds: Number($("destinationTimeout").value || 30)
+        };
   await api("/api/destinations", {
     method: "POST",
     body: JSON.stringify({
-      name: $("destinationName").value.trim() || (type === "webhook" ? "Webhook agent" : "Local agent"),
+      name: $("destinationName").value.trim() || (isBridge ? AGENT_PRESETS[preset].name : type === "webhook" ? "Webhook agent" : "Local agent"),
       type,
       config,
       enabled: true
@@ -856,9 +966,11 @@ $("destinationForm").addEventListener("submit", async (event) => {
   $("destinationArgs").value = "";
   $("destinationCwd").value = "";
   $("destinationSecret").value = "";
+  updateDestinationSetup();
   await refreshDestinations();
 });
 
+updateDestinationSetup();
 setView("website");
 renderSelection();
 await refreshSamples();

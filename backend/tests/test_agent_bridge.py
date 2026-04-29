@@ -89,6 +89,32 @@ def test_bridge_prompt_includes_agent_instructions(tmp_path):
     assert "Summarize the new ticket and draft next steps." in prompt
 
 
+def test_bridge_health_check_does_not_run_agent(tmp_path):
+    bridge = _load_bridge_module()
+    output_path = tmp_path / "agent-ran.txt"
+    script_path = tmp_path / "agent.py"
+    script_path.write_text(f"import pathlib\npathlib.Path({str(output_path)!r}).write_text('ran')\n")
+
+    class TestHandler(bridge.BridgeHandler):
+        pass
+
+    TestHandler.agent_command = [sys.executable, str(script_path)]
+    TestHandler.token = None
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}/health", timeout=5) as response:
+            payload = json.loads(response.read().decode())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert payload == {"status": "ok"}
+    assert not output_path.exists()
+
+
 def test_bridge_logs_event_and_agent_command(tmp_path):
     bridge = _load_bridge_module()
     logs = []

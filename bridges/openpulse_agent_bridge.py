@@ -16,6 +16,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
     prompt_mode: str = "stdin"
     stream_output: bool = True
 
+    def do_GET(self) -> None:
+        if self.path != "/health":
+            self.send_json(404, {"error": "not_found"})
+            return
+        if self.token:
+            expected = f"Bearer {self.token}"
+            received = self.headers.get("Authorization", "")
+            if received != expected:
+                self.send_json(401, {"error": "unauthorized"})
+                return
+        self.send_json(200, {"status": "ok"})
+
     def do_POST(self) -> None:
         if self.token:
             expected = f"Bearer {self.token}"
