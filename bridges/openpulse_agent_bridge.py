@@ -9,7 +9,7 @@ import sys
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
-    command: list[str] = []
+    agent_command: list[str] = []
     token: str | None = None
     timeout_seconds: int = 120
     prompt_mode: str = "stdin"
@@ -31,7 +31,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         prompt = format_prompt(payload)
         try:
-            command = self.command + [prompt] if self.prompt_mode == "arg" else self.command
+            command = self.agent_command + [prompt] if self.prompt_mode == "arg" else self.agent_command
             completed = subprocess.run(
                 command,
                 input=None if self.prompt_mode == "arg" else prompt,
@@ -104,7 +104,7 @@ def main() -> None:
     if not command:
         parser.error("Provide a command after --, for example: -- codex exec")
 
-    BridgeHandler.command = command
+    BridgeHandler.agent_command = command
     BridgeHandler.token = args.token
     BridgeHandler.timeout_seconds = args.timeout_seconds
     BridgeHandler.prompt_mode = args.prompt_mode
