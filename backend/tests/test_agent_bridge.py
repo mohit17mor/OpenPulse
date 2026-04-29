@@ -70,6 +70,25 @@ def test_bridge_arg_mode_passes_prompt_as_command_argument(tmp_path):
     assert "Price watch" in argv[0]
 
 
+def test_bridge_prompt_includes_agent_instructions(tmp_path):
+    bridge = _load_bridge_module()
+    prompt = bridge.format_prompt(
+        {
+            "type": "openpulse.monitor.new_item_detected",
+            "data": {
+                "monitor": {
+                    "name": "Jira assigned tickets",
+                    "agentInstructions": "Summarize the new ticket and draft next steps.",
+                },
+                "event": {"summary": "New item detected: PROJ-123."},
+            },
+        }
+    )
+
+    assert "Instructions:" in prompt
+    assert "Summarize the new ticket and draft next steps." in prompt
+
+
 def test_bridge_logs_event_and_agent_command(tmp_path):
     bridge = _load_bridge_module()
     logs = []

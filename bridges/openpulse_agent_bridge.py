@@ -87,6 +87,8 @@ def format_prompt(payload: dict[str, object]) -> str:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
     monitor = data.get("monitor", {}) if isinstance(data, dict) else {}
     event = data.get("event", {}) if isinstance(data, dict) else {}
+    instructions = monitor.get("agentInstructions") if isinstance(monitor, dict) else None
+    instruction_lines = ["Instructions:", str(instructions), ""] if instructions else []
     return "\n".join(
         [
             "You were woken by an OpenPulse monitor event.",
@@ -97,10 +99,11 @@ def format_prompt(payload: dict[str, object]) -> str:
             f"Previous value: {event.get('previousValue', '-')}",
             f"Current value: {event.get('currentValue', '-')}",
             "",
+            *instruction_lines,
             "Full event JSON:",
             json.dumps(payload, indent=2, sort_keys=True),
             "",
-            "Take the appropriate action using your available tools.",
+            "Take the requested action using your available tools.",
         ]
     )
 

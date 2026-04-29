@@ -56,6 +56,7 @@ class Database:
             "consecutiveFailures": int(payload.get("consecutiveFailures") or 0),
             "checkStartedAt": payload.get("checkStartedAt"),
             "destinationIds": destination_ids,
+            "agentInstructions": payload.get("agentInstructions") or "",
         }
         with self.connect() as conn:
             conn.execute(
@@ -64,9 +65,10 @@ class Database:
                     id, name, url, target_json, condition_json,
                     interval_seconds, enabled, created_at, last_checked_at,
                     next_check_at, last_status, last_error, last_duration_ms,
-                    last_value, consecutive_failures, check_started_at
+                    last_value, consecutive_failures, check_started_at,
+                    agent_instructions
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     monitor["id"],
@@ -85,6 +87,7 @@ class Database:
                     monitor["lastValue"],
                     monitor["consecutiveFailures"],
                     monitor["checkStartedAt"],
+                    monitor["agentInstructions"],
                 ),
             )
             self._set_monitor_destinations(conn, monitor["id"], destination_ids)
@@ -509,6 +512,7 @@ class Database:
             "consecutiveFailures": row["consecutive_failures"],
             "checkStartedAt": row["check_started_at"],
             "destinationIds": [],
+            "agentInstructions": row["agent_instructions"],
         }
         return monitor
 
@@ -660,6 +664,7 @@ def build_event_payload(log: dict[str, Any], monitor: dict[str, Any]) -> dict[st
                 "url": monitor["url"],
                 "sourceType": (monitor.get("target") or {}).get("sourceType") or "website",
                 "condition": monitor["condition"],
+                "agentInstructions": monitor.get("agentInstructions") or "",
             },
             "event": {
                 "id": log["id"],

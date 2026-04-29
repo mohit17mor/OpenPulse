@@ -75,6 +75,7 @@ def test_monitor_api_saves_destination_routing(tmp_path):
             "condition": {"type": "less_than", "value": 100},
             "intervalSeconds": 300,
             "destinationIds": [destination["id"]],
+            "agentInstructions": "Inspect the price change and report whether it is worth buying.",
         },
     )
     monitor_id = response.json()["id"]
@@ -83,8 +84,13 @@ def test_monitor_api_saves_destination_routing(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["destinationIds"] == [destination["id"]]
+    assert response.json()["agentInstructions"] == "Inspect the price change and report whether it is worth buying."
     assert check_response.json()["status"] == "matched"
-    assert client.get("/api/deliveries").json()[0]["destinationId"] == destination["id"]
+    delivery = client.get("/api/deliveries").json()[0]
+    assert delivery["destinationId"] == destination["id"]
+    assert delivery["payload"]["data"]["monitor"]["agentInstructions"] == (
+        "Inspect the price change and report whether it is worth buying."
+    )
 
 
 def test_destination_api_creates_lists_and_deletes_destination(tmp_path):

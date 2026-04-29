@@ -445,6 +445,7 @@ function renderMonitors() {
           </div>
           <div class="itemMeta">${escapeHtml(monitorSummary(monitor))}</div>
           <div class="itemMeta">Destinations: ${escapeHtml(destinationNames(monitor.destinationIds).join(", ") || "Log only")}</div>
+          ${monitor.agentInstructions ? `<div class="itemMeta">Agent: ${escapeHtml(monitor.agentInstructions)}</div>` : ""}
           <div class="itemMeta">Condition: ${escapeHtml(JSON.stringify(monitor.condition))}</div>
           <div class="stateGrid">
             <div>
@@ -638,6 +639,10 @@ function selectedDestinationIds() {
   return Array.from($("destinationPicker").querySelectorAll("input[type='checkbox']:checked")).map((input) => input.value);
 }
 
+function agentInstructionsFromForm() {
+  return $("agentInstructions").value.trim();
+}
+
 function logDisplayValue(log) {
   return log.details?.display || log.currentValue || "-";
 }
@@ -759,6 +764,7 @@ async function saveWebsiteMonitor() {
       condition: conditionFromForm(),
       intervalSeconds: Number($("intervalSeconds").value || 300),
       destinationIds: selectedDestinationIds(),
+      agentInstructions: agentInstructionsFromForm(),
       enabled: true
     })
   });
@@ -796,6 +802,7 @@ async function saveScriptMonitor() {
       condition: conditionFromForm(),
       intervalSeconds: Number($("intervalSeconds").value || 300),
       destinationIds: selectedDestinationIds(),
+      agentInstructions: agentInstructionsFromForm(),
       enabled: true
     })
   });

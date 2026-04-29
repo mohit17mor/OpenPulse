@@ -329,3 +329,48 @@ def test_database_routes_monitor_events_to_selected_destinations(tmp_path):
     pending = db.list_pending_deliveries()
     assert pending[0]["payload"]["data"]["monitor"]["name"] == "Price watch"
     assert pending[0]["payload"]["data"]["event"]["currentValue"] == "$89.00"
+
+
+def test_monitor_agent_instructions_are_included_in_event_payload(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    destination = db.create_destination(
+        {
+            "name": "Codex bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765"},
+            "enabled": True,
+        }
+    )
+    monitor = db.create_monitor(
+        {
+            "name": "Jira assigned tickets",
+            "url": "script://jira.py",
+            "target": {"sourceType": "script"},
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 30,
+            "enabled": True,
+            "destinationIds": [destination["id"]],
+            "agentInstructions": "Summarize the new ticket and draft next steps.",
+        }
+    )
+    log = db.create_log(
+        {
+            "monitorId": monitor["id"],
+            "status": "matched",
+            "sourceType": "script",
+            "previousValue": None,
+            "currentValue": "PROJ-123",
+            "conditionMatched": True,
+            "message": "new_item_detected",
+            "details": {"item": {"key": "PROJ-123", "summary": "Fix login"}},
+        }
+    )
+
+    delivery = db.enqueue_deliveries_for_log(log, monitor)[0]
+    saved_monitor = db.get_monitor(monitor["id"])
+
+    assert saved_monitor["agentInstructions"] == "Summarize the new ticket and draft next steps."
+    assert delivery["payload"]["data"]["monitor"]["agentInstructions"] == (
+        "Summarize the new ticket and draft next steps."
+    )

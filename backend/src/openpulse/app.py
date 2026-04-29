@@ -37,6 +37,7 @@ class MonitorRequest(BaseModel):
     intervalSeconds: int = Field(default=300, ge=5)
     enabled: bool = True
     destinationIds: list[str] = []
+    agentInstructions: str = ""
 
 
 class ScriptPreviewRequest(BaseModel):
@@ -160,6 +161,7 @@ def create_app(
                 "intervalSeconds": request.intervalSeconds,
                 "enabled": request.enabled,
                 "destinationIds": request.destinationIds,
+                "agentInstructions": request.agentInstructions,
             }
         )
         if target.get("sourceType") == "script" and target.get("selection", {}).get("mode") == "items":
