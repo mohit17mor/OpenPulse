@@ -38,9 +38,6 @@ class CheckEngine:
         if self.extractor is None:
             raise ValueError("Website extractor is not configured")
         extracted = await self.extractor.extract(monitor["url"], monitor["target"])
-        if _is_website_items_target(monitor["target"]):
-            return self._run_website_items_check(monitor, extracted, check_started)
-
         previous_value = monitor["target"].get("initialValue")
         condition_result = evaluate_condition(
             monitor["condition"],
@@ -190,93 +187,28 @@ class CheckEngine:
     ) -> dict[str, Any]:
         selection = monitor["target"].get("selection") or {}
         items = extract_items(preview, selection)
-        return self._record_items_check(
-            monitor,
-            items,
-            selection,
-            check_started,
-            source_type="script",
-            evidence={"itemCount": len(items), "selection": selection},
-        )
+        seen_ids = self.db.list_script_seen_item_ids(monitor["id"])
 
-    def _run_website_items_check(
-        self,
-        monitor: dict[str, Any],
-        extracted: ExtractedValue,
-        check_started: float,
-    ) -> dict[str, Any]:
-        selection = monitor["target"].get("selection") or {}
-        if extracted.details.get("reason") == "security_verification":
-            status = "blocked"
-            message = "security_verification"
-        elif not extracted.found:
-            status = "missing"
-            message = extracted.details.get("reason") or "target_missing"
-        else:
-            items = extracted.details.get("items") or []
-            return self._record_items_check(
-                monitor,
-                items,
-                selection,
-                check_started,
-                source_type="website",
-                evidence={**extracted.details, "itemCount": len(items), "selection": selection},
-            )
-
-        log = self.db.create_log(
-            {
-                "monitorId": monitor["id"],
-                "status": status,
-                **_event_fields(
-                    source_type="website",
-                    status=status,
-                    message=message,
-                    previous_value=None,
-                    current_value=None,
-                    condition_matched=False,
-                    evidence=extracted.details,
-                ),
-                "previousValue": None,
-                "currentValue": None,
-                "conditionMatched": False,
-                "message": message,
-                "details": extracted.details,
-            }
-        )
-        self._record_lifecycle(monitor["id"], status, None, check_started, message)
-        return log
-
-    def _record_items_check(
-        self,
-        monitor: dict[str, Any],
-        items: list[dict[str, Any]],
-        selection: dict[str, Any],
-        check_started: float,
-        *,
-        source_type: str,
-        evidence: dict[str, Any],
-    ) -> dict[str, Any]:
-        seen_ids = self.db.list_seen_item_ids(monitor["id"])
         if not seen_ids:
-            self.db.add_seen_items(monitor["id"], items)
+            self.db.add_script_seen_items(monitor["id"], items)
             log = self.db.create_log(
                 {
                     "monitorId": monitor["id"],
                     "status": "checked",
                     **_event_fields(
-                        source_type=source_type,
+                        source_type="script",
                         status="checked",
                         message="baseline_established",
                         previous_value=None,
                         current_value=str(len(items)),
                         condition_matched=False,
-                        evidence=evidence,
+                        evidence={"itemCount": len(items), "selection": selection},
                     ),
                     "previousValue": None,
                     "currentValue": str(len(items)),
                     "conditionMatched": False,
                     "message": "baseline_established",
-                    "details": evidence,
+                    "details": {"itemCount": len(items), "selection": selection},
                 }
             )
             self._record_lifecycle(monitor["id"], "checked", str(len(items)), check_started, log["message"])
@@ -289,19 +221,19 @@ class CheckEngine:
                     "monitorId": monitor["id"],
                     "status": "checked",
                     **_event_fields(
-                        source_type=source_type,
+                        source_type="script",
                         status="checked",
                         message="no_new_items",
                         previous_value=str(len(seen_ids)),
                         current_value=str(len(items)),
                         condition_matched=False,
-                        evidence=evidence,
+                        evidence={"itemCount": len(items), "selection": selection},
                     ),
                     "previousValue": str(len(seen_ids)),
                     "currentValue": str(len(items)),
                     "conditionMatched": False,
                     "message": "no_new_items",
-                    "details": evidence,
+                    "details": {"itemCount": len(items), "selection": selection},
                 }
             )
             self._record_lifecycle(monitor["id"], "checked", str(len(items)), check_started, log["message"])
@@ -315,7 +247,7 @@ class CheckEngine:
                         "monitorId": monitor["id"],
                         "status": "matched",
                         **_event_fields(
-                            source_type=source_type,
+                            source_type="script",
                             status="matched",
                             message="new_item_detected",
                             previous_value=None,
@@ -341,7 +273,7 @@ class CheckEngine:
                     }
                 )
             )
-        self.db.add_seen_items(monitor["id"], new_items)
+        self.db.add_script_seen_items(monitor["id"], new_items)
         self._record_lifecycle(monitor["id"], "matched", str(len(new_items)), check_started, "new_items_detected")
         return {
             "status": "matched",
@@ -380,10 +312,6 @@ def _item_display(item: dict[str, Any], selection: dict[str, Any]) -> str:
     if value is None:
         value = _item_field(item, selection.get("idField"))
     return str(value)
-
-
-def _is_website_items_target(target: dict[str, Any]) -> bool:
-    return target.get("sourceType") == "website" and target.get("mode") == "items"
 
 
 def _event_fields(

@@ -204,12 +204,6 @@ class Database:
             cursor = conn.execute("delete from monitors where id = ?", (monitor_id,))
             return cursor.rowcount > 0
 
-    def add_seen_items(self, monitor_id: str, items: list[dict[str, Any]]) -> None:
-        self.add_script_seen_items(monitor_id, items)
-
-    def list_seen_item_ids(self, monitor_id: str) -> set[str]:
-        return self.list_script_seen_item_ids(monitor_id)
-
     def add_script_seen_items(self, monitor_id: str, items: list[dict[str, Any]]) -> None:
         now = utc_now()
         with self.connect() as conn:
