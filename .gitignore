@@ -9,3 +9,4 @@ dist/
 .DS_Store
 *.log
 fixtures/scripts/.live_feed_demo_state.json
+/scripts/custom/
