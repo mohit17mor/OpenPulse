@@ -5,6 +5,7 @@ const state = {
   scriptPreview: null,
   scriptSelection: null,
   sampleMonitors: [],
+  customScripts: [],
   destinations: [],
   destinationHealth: {},
   monitors: [],
@@ -378,13 +379,47 @@ function getPath(value, path) {
 
 function renderSamples() {
   const container = $("samplesList");
-  if (state.sampleMonitors.length === 0) {
-    container.innerHTML = '<p class="subtle">No starter scripts found.</p>';
+  if (state.sampleMonitors.length === 0 && state.customScripts.length === 0) {
+    container.innerHTML = '<p class="subtle">No scripts found yet. Add Python scripts to scripts/custom and refresh.</p>';
     return;
   }
-  container.innerHTML = state.sampleMonitors
-    .map(
-      (sample) => `
+  container.innerHTML = `
+    ${renderScriptLibrarySection("Custom scripts", "Files detected from scripts/custom.", state.customScripts, "Use script")}
+    ${renderScriptLibrarySection("Starter scripts", "Built-in examples you can load and edit.", state.sampleMonitors, "Load starter")}
+  `;
+  container.querySelectorAll("[data-use-script]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const script = [...state.customScripts, ...state.sampleMonitors].find((item) => item.id === button.dataset.useScript);
+      if (script) await applyScriptLibraryItem(script);
+    });
+  });
+}
+
+function renderScriptLibrarySection(title, subtitle, scripts, buttonLabel) {
+  const body = scripts.length === 0
+    ? '<p class="subtle">No scripts found in this group.</p>'
+    : `
+      <div class="sampleGrid">
+        ${scripts.map((sample) => renderScriptLibraryCard(sample, buttonLabel)).join("")}
+      </div>
+    `;
+  return `
+    <section class="librarySection">
+      <div class="libraryHeader">
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(subtitle)}</p>
+        </div>
+        <span>${scripts.length}</span>
+      </div>
+      ${body}
+    </section>
+  `;
+}
+
+function renderScriptLibraryCard(sample, buttonLabel) {
+  const selectionLabel = sample.selection?.mode === "items" ? "new items" : sample.selection?.path || "choose after preview";
+  return `
         <article class="sampleCard">
           <div>
             <div class="sampleCategory">${escapeHtml(sample.category || "Starter")}</div>
@@ -392,21 +427,13 @@ function renderSamples() {
             <p>${escapeHtml(sample.description)}</p>
           </div>
           <div class="sampleMeta">
-            <span>${escapeHtml(sample.selection?.mode === "items" ? "new items" : sample.selection?.path || "value")}</span>
+            <span>${escapeHtml(selectionLabel)}</span>
             <span>${escapeHtml(conditionLabel(sample.condition))}</span>
             <span>${escapeHtml(`${sample.intervalSeconds || 300}s`)}</span>
           </div>
-          <button type="button" data-use-sample="${escapeHtml(sample.id)}">Load script</button>
+          <button type="button" data-use-script="${escapeHtml(sample.id)}">${escapeHtml(buttonLabel)}</button>
         </article>
-      `
-    )
-    .join("");
-  container.querySelectorAll("[data-use-sample]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const sample = state.sampleMonitors.find((item) => item.id === button.dataset.useSample);
-      if (sample) await applySampleMonitor(sample);
-    });
-  });
+      `;
 }
 
 function conditionLabel(condition) {
@@ -416,10 +443,10 @@ function conditionLabel(condition) {
   return `${condition.type.replaceAll("_", " ")} ${condition.value}`;
 }
 
-async function applySampleMonitor(sample) {
+async function applyScriptLibraryItem(sample) {
   const script = sample.script || {};
   state.scriptPreview = null;
-  state.scriptSelection = { ...(sample.selection || {}) };
+  state.scriptSelection = sample.selection ? { ...sample.selection } : null;
   $("scriptCommand").value = script.command || "python3";
   $("scriptArgs").value = (script.args || []).join("\n");
   $("scriptCwd").value = script.cwd || "";
@@ -746,7 +773,12 @@ async function refreshDestinationHealth() {
 }
 
 async function refreshSamples() {
-  state.sampleMonitors = await api("/api/script-templates");
+  const [sampleMonitors, customScripts] = await Promise.all([
+    api("/api/script-templates"),
+    api("/api/scripts/custom")
+  ]);
+  state.sampleMonitors = sampleMonitors;
+  state.customScripts = customScripts;
   renderSamples();
 }
 

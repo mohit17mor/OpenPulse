@@ -722,6 +722,51 @@ label {
   gap: 12px;
 }
 
+.scriptLibrary {
+  display: grid;
+  gap: 18px;
+}
+
+.librarySection {
+  display: grid;
+  gap: 12px;
+}
+
+.libraryHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.libraryHeader h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.libraryHeader p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.libraryHeader span {
+  min-width: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 7px 9px;
+  text-align: center;
+}
+
 .sampleCard {
   display: grid;
   gap: 14px;

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
 from openpulse.delivery import DeliveryDispatcher, check_destination_health
-from openpulse.sample_monitors import list_sample_monitors
+from openpulse.sample_monitors import list_custom_scripts, list_sample_monitors
 from openpulse.scripts import run_script_preview
 from openpulse.scheduler import MonitorScheduler
 from openpulse.storage import Database
@@ -115,6 +115,10 @@ def create_app(
     @app.get("/api/script-templates")
     async def script_templates() -> list[dict[str, Any]]:
         return list_sample_monitors()
+
+    @app.get("/api/scripts/custom")
+    async def custom_scripts() -> list[dict[str, Any]]:
+        return list_custom_scripts()
 
     @app.get("/api/sample-monitors")
     async def sample_monitors_compat() -> list[dict[str, Any]]:
