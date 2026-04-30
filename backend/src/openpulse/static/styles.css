@@ -271,34 +271,6 @@ code {
   border-radius: 3px;
 }
 
-.folderCard {
-  display: grid;
-  gap: 8px;
-  border: 1px solid var(--sidebar-line);
-  border-radius: 8px;
-  background: var(--sidebar-soft);
-  padding: 10px;
-}
-
-.folderCard code {
-  color: #b6bdc8;
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.folderCard span {
-  justify-self: start;
-  border: 1px solid rgba(15, 159, 110, 0.28);
-  border-radius: 999px;
-  background: rgba(15, 159, 110, 0.08);
-  padding: 3px 8px;
-  color: #7dd3b0;
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
 .sideFooter {
   display: flex;
   align-items: center;
