@@ -26,10 +26,12 @@ def list_sample_monitors() -> list[dict[str, Any]]:
 def workspace_paths(*, project_root: Path = PROJECT_ROOT) -> dict[str, str]:
     scripts_dir = project_root / "scripts"
     custom_scripts_dir = scripts_dir / "custom"
+    browser_profile_dir = project_root / "data" / "browser-profile"
     return {
         "projectRoot": str(project_root),
         "scriptsDir": str(scripts_dir),
         "customScriptsDir": str(custom_scripts_dir),
+        "browserProfileDir": str(browser_profile_dir),
     }
 
 

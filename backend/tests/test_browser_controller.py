@@ -1,6 +1,8 @@
 import asyncio
+from pathlib import Path
 
-from openpulse.browser import BrowserController, _looks_like_transient_http_ok_shell, extract_from_page
+import openpulse.browser as browser_module
+from openpulse.browser import BrowserController, PlaywrightExtractor, _looks_like_transient_http_ok_shell, extract_from_page
 
 
 class FakePage:
@@ -8,6 +10,7 @@ class FakePage:
         self.closed = closed
         self.handlers = {}
         self.evaluations = []
+        self.body_text = "Actual page"
 
     def is_closed(self):
         return self.closed
@@ -19,10 +22,67 @@ class FakePage:
         self.evaluations.append(script)
         return None
 
+    async def goto(self, url, wait_until=None, timeout=None):
+        self.url = url
+        return FakeResponse(200)
+
+    async def wait_for_timeout(self, timeout):
+        return None
+
+    async def title(self):
+        return ""
+
+    def locator(self, selector):
+        return FakeLocator(self, selector)
+
 
 class FakeContext:
     def __init__(self, pages):
         self.pages = pages
+
+    async def expose_binding(self, name, callback):
+        return None
+
+    async def add_init_script(self, script):
+        return None
+
+    def on(self, event, handler):
+        return None
+
+    async def new_page(self):
+        page = FakePage()
+        self.pages.append(page)
+        return page
+
+    async def close(self):
+        return None
+
+
+class FakeChromium:
+    def __init__(self, context):
+        self.context = context
+        self.persistent_calls = []
+
+    async def launch_persistent_context(self, user_data_dir, **kwargs):
+        self.persistent_calls.append((user_data_dir, kwargs))
+        return self.context
+
+
+class FakePlaywright:
+    def __init__(self, context):
+        self.chromium = FakeChromium(context)
+        self.stopped = False
+
+    async def stop(self):
+        self.stopped = True
+
+
+class FakeAsyncPlaywright:
+    def __init__(self, playwright):
+        self.playwright = playwright
+
+    async def start(self):
+        return self.playwright
 
 
 class FakeResponse:
@@ -193,6 +253,41 @@ async def test_browser_controller_disables_monitor_mode_on_other_user_pages():
     assert len(first.evaluations) == 1
     assert second.evaluations == []
     assert internal.evaluations == []
+
+
+async def test_browser_controller_launch_uses_persistent_openpulse_profile(tmp_path, monkeypatch):
+    context = FakeContext([])
+    playwright = FakePlaywright(context)
+    monkeypatch.setattr(browser_module, "async_playwright", lambda: FakeAsyncPlaywright(playwright))
+    profile_dir = tmp_path / "browser-profile"
+    controller = BrowserController(profile_dir=profile_dir)
+
+    result = await controller.launch()
+
+    assert result == {"status": "opened"}
+    assert playwright.chromium.persistent_calls
+    user_data_dir, kwargs = playwright.chromium.persistent_calls[0]
+    assert user_data_dir == str(profile_dir)
+    assert kwargs["headless"] is False
+    assert kwargs["viewport"] == {"width": 1440, "height": 1000}
+    assert profile_dir.is_dir()
+
+
+async def test_playwright_extractor_uses_persistent_profile_for_fallback_checks(tmp_path, monkeypatch):
+    context = FakeContext([])
+    playwright = FakePlaywright(context)
+    monkeypatch.setattr(browser_module, "async_playwright", lambda: FakeAsyncPlaywright(playwright))
+    profile_dir = tmp_path / "browser-profile"
+    extractor = PlaywrightExtractor(profile_dir=profile_dir)
+
+    extracted = await extractor.extract("https://example.test/product", {"selector": "#price"})
+
+    assert extracted.found is True
+    assert playwright.chromium.persistent_calls
+    user_data_dir, kwargs = playwright.chromium.persistent_calls[0]
+    assert user_data_dir == str(profile_dir)
+    assert kwargs["headless"] is True
+    assert extracted.details["source"] == "profile_headless"
 
 
 async def test_extract_from_page_recovers_from_transient_http_ok_shell():

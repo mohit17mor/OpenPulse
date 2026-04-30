@@ -59,6 +59,7 @@ def test_workspace_api_returns_runtime_paths(tmp_path):
     assert Path(workspace["projectRoot"]).name == "openpulse"
     assert Path(workspace["scriptsDir"]).name == "scripts"
     assert Path(workspace["customScriptsDir"]).parts[-2:] == ("scripts", "custom")
+    assert Path(workspace["browserProfileDir"]).parts[-2:] == ("data", "browser-profile")
 
 
 def test_app_startup_ensures_custom_script_workspace(tmp_path, monkeypatch):

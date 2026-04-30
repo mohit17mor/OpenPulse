@@ -67,7 +67,10 @@ def create_app(
     db = Database(db_path)
     db.initialize()
     browser_controller = browser or BrowserController()
-    check_extractor = extractor or SessionFirstExtractor(browser_controller, PlaywrightExtractor())
+    check_extractor = extractor or SessionFirstExtractor(
+        browser_controller,
+        PlaywrightExtractor(profile_dir=browser_controller.profile_dir),
+    )
     check_engine = CheckEngine(db, check_extractor)
     scheduler = MonitorScheduler(
         db,

@@ -12,6 +12,7 @@ from openpulse.checker import ExtractedValue
 
 ROOT = Path(__file__).resolve().parents[3]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+DEFAULT_BROWSER_PROFILE_DIR = ROOT / "data" / "browser-profile"
 
 _FOCUS_TRACKER_SCRIPT = """
 (() => {
@@ -43,7 +44,8 @@ def _binding_page(source: Any) -> Page | None:
 
 
 class BrowserController:
-    def __init__(self):
+    def __init__(self, *, profile_dir: str | Path = DEFAULT_BROWSER_PROFILE_DIR):
+        self.profile_dir = Path(profile_dir)
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -65,24 +67,33 @@ class BrowserController:
                 await self._prepare_page(self.page)
             return {"status": "already_open"}
         self.playwright = await async_playwright().start()
+        self.profile_dir.mkdir(parents=True, exist_ok=True)
         try:
-            self.browser = await self.playwright.chromium.launch(channel="chrome", headless=False)
+            self.context = await self.playwright.chromium.launch_persistent_context(
+                str(self.profile_dir),
+                channel="chrome",
+                headless=False,
+                viewport={"width": 1440, "height": 1000},
+                bypass_csp=True,
+            )
         except Exception:
-            self.browser = await self.playwright.chromium.launch(headless=False)
-        self.context = await self.browser.new_context(
-            viewport={"width": 1440, "height": 1000},
-            bypass_csp=True,
-        )
+            self.context = await self.playwright.chromium.launch_persistent_context(
+                str(self.profile_dir),
+                headless=False,
+                viewport={"width": 1440, "height": 1000},
+                bypass_csp=True,
+            )
+        self.browser = getattr(self.context, "browser", None)
         await self._expose_bindings()
         await self.context.add_init_script(script=(STATIC_DIR / "overlay.js").read_text())
         await self.context.add_init_script(script=_FOCUS_TRACKER_SCRIPT)
         self.context.on("page", lambda page: self._schedule_prepare_page(page))
-        self.page = await self.context.new_page()
+        self.page = self._latest_open_page() or await self.context.new_page()
         await self._prepare_page(self.page)
         return {"status": "opened"}
 
     def has_active_session(self) -> bool:
-        return self.context is not None and self.browser is not None and self.browser.is_connected()
+        return self.context is not None and (self.browser is None or self.browser.is_connected())
 
     async def navigate(self, url: str) -> dict[str, str]:
         page = await self.ensure_page()
@@ -102,6 +113,9 @@ class BrowserController:
         return {"status": "monitor_mode_enabled"}
 
     async def close(self) -> None:
+        if self.context is not None:
+            with suppress(Exception):
+                await self.context.close()
         if self.browser is not None:
             with suppress(Exception):
                 await self.browser.close()
@@ -240,8 +254,41 @@ class BrowserController:
 
 
 class PlaywrightExtractor:
+    def __init__(self, *, profile_dir: str | Path | None = None):
+        self.profile_dir = Path(profile_dir) if profile_dir is not None else None
+        self._profile_lock = asyncio.Lock()
+
     async def extract(self, url: str, target: dict[str, Any]) -> ExtractedValue:
-        async with async_playwright() as playwright:
+        if self.profile_dir is not None:
+            async with self._profile_lock:
+                return await self._extract(url, target)
+        return await self._extract(url, target)
+
+    async def _extract(self, url: str, target: dict[str, Any]) -> ExtractedValue:
+        playwright = await async_playwright().start()
+        try:
+            if self.profile_dir is not None:
+                self.profile_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    context = await playwright.chromium.launch_persistent_context(
+                        str(self.profile_dir),
+                        channel="chrome",
+                        headless=True,
+                        viewport={"width": 1440, "height": 1000},
+                        bypass_csp=True,
+                    )
+                except Exception:
+                    context = await playwright.chromium.launch_persistent_context(
+                        str(self.profile_dir),
+                        headless=True,
+                        viewport={"width": 1440, "height": 1000},
+                        bypass_csp=True,
+                    )
+                page = await context.new_page()
+                try:
+                    return await extract_from_page(page, url, target, source="profile_headless")
+                finally:
+                    await context.close()
             try:
                 browser = await playwright.chromium.launch(channel="chrome", headless=True)
             except Exception:
@@ -251,6 +298,8 @@ class PlaywrightExtractor:
                 return await extract_from_page(page, url, target, source="headless")
             finally:
                 await browser.close()
+        finally:
+            await playwright.stop()
 
 
 class SessionFirstExtractor:
