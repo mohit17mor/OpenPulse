@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from openpulse.browser import BrowserController, PlaywrightExtractor, SessionFirstExtractor
 from openpulse.checker import CheckEngine, Extractor
 from openpulse.delivery import DeliveryDispatcher, check_destination_health
-from openpulse.sample_monitors import list_custom_scripts, list_sample_monitors
+from openpulse.sample_monitors import ensure_script_workspace, list_custom_scripts, list_sample_monitors, workspace_paths
 from openpulse.scripts import run_script_preview
 from openpulse.scheduler import MonitorScheduler
 from openpulse.storage import Database
@@ -79,6 +79,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        ensure_script_workspace()
         if start_scheduler:
             scheduler.start()
         if start_delivery_dispatcher:
@@ -111,6 +112,10 @@ def create_app(
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/workspace")
+    async def workspace() -> dict[str, str]:
+        return workspace_paths()
 
     @app.get("/api/script-templates")
     async def script_templates() -> list[dict[str, Any]]:

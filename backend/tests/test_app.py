@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from pathlib import Path
 import sys
 from threading import Thread
 
+import openpulse.app as app_module
 from openpulse.app import create_app
 from openpulse.checker import ExtractedValue
 
@@ -44,6 +46,35 @@ def test_monitor_api_saves_and_checks_monitor(tmp_path):
     assert check_response.status_code == 200
     assert check_response.json()["status"] == "matched"
     assert logs_response.json()[0]["currentValue"] == "$89.00"
+
+
+def test_workspace_api_returns_runtime_paths(tmp_path):
+    app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
+    client = TestClient(app)
+
+    response = client.get("/api/workspace")
+
+    assert response.status_code == 200
+    workspace = response.json()
+    assert Path(workspace["projectRoot"]).name == "openpulse"
+    assert Path(workspace["scriptsDir"]).name == "scripts"
+    assert Path(workspace["customScriptsDir"]).parts[-2:] == ("scripts", "custom")
+
+
+def test_app_startup_ensures_custom_script_workspace(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(app_module, "ensure_script_workspace", lambda: calls.append("created"), raising=False)
+    app = create_app(
+        db_path=tmp_path / "openpulse.db",
+        extractor=FakeExtractor(),
+        start_scheduler=False,
+        start_delivery_dispatcher=False,
+    )
+
+    with TestClient(app) as client:
+        assert client.get("/api/health").status_code == 200
+
+    assert calls == ["created"]
 
 
 def test_monitor_api_pauses_and_resumes_monitor(tmp_path):

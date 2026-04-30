@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 import openpulse.app as app_module
 from openpulse.app import create_app
-from openpulse.sample_monitors import list_custom_scripts
+from openpulse.sample_monitors import ensure_script_workspace, list_custom_scripts
 
 
 def test_sample_monitors_api_returns_templates(tmp_path):
@@ -65,6 +65,14 @@ def test_custom_script_discovery_returns_user_scripts(tmp_path):
             "intervalSeconds": 300,
         }
     ]
+
+
+def test_ensure_script_workspace_creates_custom_dir(tmp_path):
+    custom_dir = tmp_path / "scripts" / "custom"
+
+    ensure_script_workspace(custom_dir=custom_dir)
+
+    assert custom_dir.is_dir()
 
 
 def test_custom_scripts_api_returns_discovered_scripts(tmp_path, monkeypatch):

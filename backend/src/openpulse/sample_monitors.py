@@ -23,14 +23,26 @@ def list_sample_monitors() -> list[dict[str, Any]]:
     return [_resolve_sample(sample) for sample in samples]
 
 
+def workspace_paths(*, project_root: Path = PROJECT_ROOT) -> dict[str, str]:
+    scripts_dir = project_root / "scripts"
+    custom_scripts_dir = scripts_dir / "custom"
+    return {
+        "projectRoot": str(project_root),
+        "scriptsDir": str(scripts_dir),
+        "customScriptsDir": str(custom_scripts_dir),
+    }
+
+
+def ensure_script_workspace(*, custom_dir: Path = CUSTOM_SCRIPTS_DIR) -> None:
+    custom_dir.mkdir(parents=True, exist_ok=True)
+
+
 def list_custom_scripts(
     *,
     custom_dir: Path = CUSTOM_SCRIPTS_DIR,
     project_root: Path = PROJECT_ROOT,
 ) -> list[dict[str, Any]]:
-    if not custom_dir.exists():
-        custom_dir.mkdir(parents=True, exist_ok=True)
-        return []
+    ensure_script_workspace(custom_dir=custom_dir)
 
     scripts: list[dict[str, Any]] = []
     for path in sorted(custom_dir.rglob("*")):

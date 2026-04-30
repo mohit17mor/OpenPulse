@@ -6,6 +6,7 @@ const state = {
   scriptSelection: null,
   sampleMonitors: [],
   customScripts: [],
+  workspace: null,
   destinations: [],
   destinationHealth: {},
   monitors: [],
@@ -782,6 +783,13 @@ async function refreshSamples() {
   renderSamples();
 }
 
+async function loadWorkspace() {
+  state.workspace = await api("/api/workspace");
+  if (!$("scriptCwd").value.trim()) {
+    $("scriptCwd").value = state.workspace.projectRoot;
+  }
+}
+
 async function refreshLogs() {
   state.logs = await api("/api/logs");
   renderLogs();
@@ -1034,6 +1042,7 @@ $("destinationForm").addEventListener("submit", async (event) => {
 });
 
 updateDestinationSetup();
+await loadWorkspace();
 setView("website");
 renderSelection();
 await refreshSamples();
