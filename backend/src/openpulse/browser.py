@@ -90,6 +90,7 @@ class BrowserController:
             url = f"https://{url}"
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         await page.wait_for_timeout(500)
+        await _recover_transient_http_ok_shell(page)
         await self.inject_overlay(page)
         return {"status": "navigated", "url": page.url}
 
@@ -266,9 +267,14 @@ class SessionFirstExtractor:
 async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, source: str) -> ExtractedValue:
     response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
     await page.wait_for_timeout(2500)
+    transient_reloads = await _recover_transient_http_ok_shell(page)
+    render_details = {}
+    if transient_reloads:
+        render_details["renderRecovery"] = {"transientHttpOkReloads": transient_reloads}
     blocker = await _detect_security_verification(page, response.status if response else None)
     if blocker is not None:
         blocker["source"] = source
+        blocker.update(render_details)
         return ExtractedValue(found=False, value=None, details=blocker)
 
     value = await _extract_target_value(page, target)
@@ -281,6 +287,7 @@ async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, sou
                 "source": source,
                 "selector": target.get("selector"),
                 "semanticType": target.get("semanticType"),
+                **render_details,
             },
         )
     return ExtractedValue(
@@ -290,8 +297,32 @@ async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, sou
             "source": source,
             "selector": target.get("selector"),
             "semanticType": target.get("semanticType"),
+            **render_details,
         },
     )
+
+
+async def _recover_transient_http_ok_shell(page: Page, *, max_reloads: int = 3) -> int:
+    reloads = 0
+    while reloads < max_reloads and await _is_transient_http_ok_shell(page):
+        await page.reload(wait_until="domcontentloaded", timeout=45000)
+        reloads += 1
+        await page.wait_for_timeout(1500)
+    return reloads
+
+
+async def _is_transient_http_ok_shell(page: Page) -> bool:
+    try:
+        body = await page.locator("body").inner_text(timeout=1500)
+    except Exception:
+        return False
+    return _looks_like_transient_http_ok_shell(body)
+
+
+def _looks_like_transient_http_ok_shell(body: str) -> bool:
+    compact = body.strip().lower().replace("_", "-").replace(" ", "-")
+    compact = "-".join(part for part in compact.splitlines() if part.strip())
+    return compact in {"200-ok", "200", "ok"}
 
 
 async def _detect_security_verification(page: Page, status: int | None) -> dict[str, Any] | None:
