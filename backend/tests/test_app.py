@@ -46,6 +46,35 @@ def test_monitor_api_saves_and_checks_monitor(tmp_path):
     assert logs_response.json()[0]["currentValue"] == "$89.00"
 
 
+def test_monitor_api_pauses_and_resumes_monitor(tmp_path):
+    app = create_app(db_path=tmp_path / "openpulse.db", extractor=FakeExtractor(), start_scheduler=False)
+    client = TestClient(app)
+    create_response = client.post(
+        "/api/monitors",
+        json={
+            "name": "Price drop",
+            "url": "http://example.test/product",
+            "target": {"semanticType": "price", "initialValue": "$129.00", "selector": "#price"},
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 300,
+        },
+    )
+    monitor_id = create_response.json()["id"]
+
+    pause_response = client.post(f"/api/monitors/{monitor_id}/pause")
+    paused_monitor = client.get("/api/monitors").json()[0]
+    resume_response = client.post(f"/api/monitors/{monitor_id}/resume")
+
+    assert pause_response.status_code == 200
+    assert pause_response.json()["enabled"] is False
+    assert pause_response.json()["lastStatus"] == "paused"
+    assert paused_monitor["enabled"] is False
+    assert paused_monitor["lastStatus"] == "paused"
+    assert resume_response.status_code == 200
+    assert resume_response.json()["enabled"] is True
+    assert resume_response.json()["lastStatus"] == "pending"
+
+
 def test_monitor_api_saves_destination_routing(tmp_path):
     app = create_app(
         db_path=tmp_path / "openpulse.db",

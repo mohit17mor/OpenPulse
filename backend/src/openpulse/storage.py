@@ -210,6 +210,25 @@ class Database:
                 (json.dumps(target), monitor_id),
             )
 
+    def set_monitor_enabled(self, monitor_id: str, enabled: bool) -> dict[str, Any] | None:
+        status = "pending" if enabled else "paused"
+        error = None if enabled else "paused_by_user"
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                update monitors
+                set enabled = ?,
+                    last_status = ?,
+                    last_error = ?,
+                    check_started_at = null
+                where id = ?
+                """,
+                (1 if enabled else 0, status, error, monitor_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+        return self.get_monitor(monitor_id)
+
     def create_destination(self, payload: dict[str, Any]) -> dict[str, Any]:
         destination = {
             "id": payload.get("id") or str(uuid4()),

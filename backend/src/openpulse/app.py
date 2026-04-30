@@ -217,6 +217,20 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Monitor not found: {monitor_id}")
         return {"status": "deleted"}
 
+    @app.post("/api/monitors/{monitor_id}/pause")
+    async def pause_monitor(monitor_id: str) -> dict[str, Any]:
+        monitor = db.set_monitor_enabled(monitor_id, False)
+        if monitor is None:
+            raise HTTPException(status_code=404, detail=f"Monitor not found: {monitor_id}")
+        return monitor
+
+    @app.post("/api/monitors/{monitor_id}/resume")
+    async def resume_monitor(monitor_id: str) -> dict[str, Any]:
+        monitor = db.set_monitor_enabled(monitor_id, True)
+        if monitor is None:
+            raise HTTPException(status_code=404, detail=f"Monitor not found: {monitor_id}")
+        return monitor
+
     @app.post("/api/monitors/{monitor_id}/check")
     async def run_check(monitor_id: str) -> dict[str, Any]:
         try:

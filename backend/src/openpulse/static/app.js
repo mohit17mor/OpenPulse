@@ -450,6 +450,9 @@ function renderMonitors() {
             <span>${escapeHtml(monitor.name)}</span>
             <span class="actions">
               <button class="secondary" data-run-check="${monitor.id}">Run Check</button>
+              <button class="secondary" data-toggle-monitor="${monitor.id}">
+                ${monitor.enabled ? "Pause" : "Resume"}
+              </button>
               <button class="danger" data-delete-monitor="${monitor.id}">Delete</button>
             </span>
           </div>
@@ -490,6 +493,15 @@ function renderMonitors() {
     button.addEventListener("click", async () => {
       await api(`/api/monitors/${button.dataset.runCheck}/check`, { method: "POST" });
       await refreshLogs();
+      await refreshMonitors();
+    });
+  });
+
+  container.querySelectorAll("[data-toggle-monitor]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const monitor = state.monitors.find((item) => item.id === button.dataset.toggleMonitor);
+      const action = monitor?.enabled ? "pause" : "resume";
+      await api(`/api/monitors/${button.dataset.toggleMonitor}/${action}`, { method: "POST" });
       await refreshMonitors();
     });
   });
