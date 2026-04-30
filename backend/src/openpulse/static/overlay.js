@@ -4,7 +4,9 @@
   }
 
   const CURRENCY_RE = /(?:[$€£₹¥]\s?\d|\d[\d,.]*\s?(?:USD|EUR|GBP|INR))/i;
+  const CURRENCY_GLOBAL_RE = /(?:[$€£₹¥]\s?\d[\d,.]*|\d[\d,.]*\s?(?:USD|EUR|GBP|INR))/gi;
   const NUMBER_RE = /^[-+]?\d[\d,]*(?:\.\d+)?(?:\s?[%x])?$/i;
+  const NUMBER_GLOBAL_RE = /[-+]?\d[\d,]*(?:\.\d+)?(?:\s?[%x])?/gi;
   const STATUS_RE = /\b(in stock|out of stock|sold out|available|unavailable|only \d+ left|preorder|backorder|ships|delivery)\b/i;
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "META", "LINK", "SVG", "PATH", "HEAD"]);
   const SKIP_LANDMARKS = new Set(["NAV", "FOOTER"]);
@@ -52,6 +54,7 @@
         selector: buildSelector(element),
         domPath: buildDomPath(element),
         nearbyText: nearbyText(element),
+        targetIdentity: buildTargetIdentity(element, text),
         boundingBox: {
           x: Math.round(rect.x + window.scrollX),
           y: Math.round(rect.y + window.scrollY),
@@ -136,6 +139,117 @@
     const parent = element.parentElement;
     if (!parent) return "";
     return normalizeText(parent.innerText || parent.textContent || "").slice(0, 220);
+  }
+
+  function buildTargetIdentity(element, selectedText) {
+    const selectedType = classifyText(selectedText, element);
+    const container = findIdentityContainer(element) || element.parentElement || element;
+    const rect = container.getBoundingClientRect();
+    const containerText = normalizeText(container.innerText || container.textContent || "");
+    const fields = extractContainerFields(container);
+    const sameTypeFields = fields.filter((field) => field.semanticType === selectedType);
+    let indexWithinContainer = sameTypeFields.findIndex((field) => field.domPath === buildDomPath(element));
+    if (indexWithinContainer < 0) {
+      indexWithinContainer = sameTypeFields.findIndex((field) => field.text === selectedText);
+    }
+    if (indexWithinContainer < 0) indexWithinContainer = 0;
+    return {
+      container: {
+        tagName: container.tagName,
+        selector: buildSelector(container),
+        domPath: buildDomPath(container),
+        text: containerText.slice(0, 1800),
+        boundingBox: {
+          x: Math.round(rect.x + window.scrollX),
+          y: Math.round(rect.y + window.scrollY),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        }
+      },
+      features: extractFeatures(containerText),
+      field: {
+        semanticType: selectedType,
+        initialValue: selectedText,
+        indexWithinContainer
+      }
+    };
+  }
+
+  function findIdentityContainer(element) {
+    let best = null;
+    let bestScore = -1;
+    let node = element.parentElement;
+    let distance = 1;
+    while (node && node !== document.body && distance <= 7) {
+      if (!shouldSkipElement(node)) {
+        const text = normalizeText(node.innerText || node.textContent || "");
+        if (text.length >= 20 && text.length <= 1800) {
+          const fields = extractContainerFields(node);
+          const score = scoreIdentityContainer(node, text, fields, distance);
+          if (score > bestScore) {
+            best = node;
+            bestScore = score;
+          }
+        }
+      }
+      node = node.parentElement;
+      distance += 1;
+    }
+    return best;
+  }
+
+  function scoreIdentityContainer(element, text, fields, distance) {
+    const tagScore = { LI: 32, ARTICLE: 32, TR: 28, SECTION: 14, DIV: 10 }[element.tagName] || 6;
+    const role = element.getAttribute("role") || "";
+    const className = String(element.className || "").toLowerCase();
+    const id = String(element.id || "").toLowerCase();
+    const shapeScore =
+      ["row", "listitem", "article"].includes(role) || /(card|item|product|result|row|ticket|issue|quote|listing)/.test(`${className} ${id}`)
+        ? 22
+        : 0;
+    const fieldScore = Math.min(34, fields.length * 7);
+    const priceScore = fields.some((field) => field.semanticType === "price") ? 12 : 0;
+    const lengthScore = Math.max(0, 22 - Math.abs(text.length - 260) / 20);
+    const distancePenalty = distance * 3;
+    return tagScore + shapeScore + fieldScore + priceScore + lengthScore - distancePenalty;
+  }
+
+  function extractContainerFields(container) {
+    const fields = [];
+    const seen = new Set();
+    const elements = [container, ...Array.from(container.querySelectorAll("*"))];
+    for (const element of elements) {
+      if (shouldSkipElement(element)) continue;
+      const text = normalizeText(element.innerText || element.textContent || "");
+      if (!isUsefulText(text) || hasUsefulChild(element)) continue;
+      const rect = element.getBoundingClientRect();
+      if (!isUsefulRectForIdentity(rect)) continue;
+      const semanticType = classifyText(text, element);
+      const key = `${semanticType}:${text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fields.push({
+        semanticType,
+        text,
+        selector: buildSelector(element),
+        domPath: buildDomPath(element)
+      });
+      if (fields.length >= 80) break;
+    }
+    return fields;
+  }
+
+  function isUsefulRectForIdentity(rect) {
+    return rect.width >= 8 && rect.height >= 8;
+  }
+
+  function extractFeatures(text) {
+    const normalized = normalizeText(text).slice(0, 2500);
+    const prices = Array.from(normalized.matchAll(CURRENCY_GLOBAL_RE)).map((match) => match[0]);
+    const numbers = Array.from(normalized.matchAll(NUMBER_GLOBAL_RE)).map((match) => match[0]).slice(0, 40);
+    const statuses = Array.from(normalized.matchAll(new RegExp(STATUS_RE.source, "gi"))).map((match) => match[0]);
+    const tokens = Array.from(new Set((normalized.toLowerCase().match(/[a-z0-9]+/g) || []).filter((token) => token.length >= 2))).slice(0, 80);
+    return { prices, numbers, statuses, tokens };
   }
 
   function cssEscape(value) {
@@ -314,6 +428,7 @@
       selector: candidate.selector,
       domPath: candidate.domPath,
       nearbyText: candidate.nearbyText,
+      targetIdentity: candidate.targetIdentity,
       boundingBox: candidate.boundingBox,
       selectedAt: new Date().toISOString()
     };

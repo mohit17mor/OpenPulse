@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from difflib import SequenceMatcher
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,193 @@ from openpulse.checker import ExtractedValue
 ROOT = Path(__file__).resolve().parents[3]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_BROWSER_PROFILE_DIR = ROOT / "data" / "browser-profile"
+MIN_CONTAINER_REFIND_CONFIDENCE = 0.62
+_TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+_WEAK_TOKENS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "this",
+    "that",
+    "your",
+    "you",
+    "all",
+    "new",
+    "old",
+    "view",
+    "more",
+    "less",
+    "left",
+    "right",
+    "available",
+    "unavailable",
+}
+
+_IDENTITY_CONTAINER_SCRIPT = """
+() => {
+  const CURRENCY_RE = /(?:[$€£₹¥]\\s?\\d[\\d,.]*|\\d[\\d,.]*\\s?(?:USD|EUR|GBP|INR))/i;
+  const CURRENCY_GLOBAL_RE = /(?:[$€£₹¥]\\s?\\d[\\d,.]*|\\d[\\d,.]*\\s?(?:USD|EUR|GBP|INR))/gi;
+  const NUMBER_RE = /^[-+]?\\d[\\d,]*(?:\\.\\d+)?(?:\\s?[%x])?$/i;
+  const NUMBER_GLOBAL_RE = /[-+]?\\d[\\d,]*(?:\\.\\d+)?(?:\\s?[%x])?/gi;
+  const STATUS_RE = /\\b(in stock|out of stock|sold out|available|unavailable|only \\d+ left|preorder|backorder|ships|delivery)\\b/i;
+  const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "META", "LINK", "SVG", "PATH", "HEAD"]);
+  const SKIP_LANDMARKS = new Set(["NAV", "FOOTER"]);
+
+  function normalizeText(text) {
+    return String(text || "").replace(/\\s+/g, " ").trim();
+  }
+
+  function classifyText(text, element) {
+    const value = normalizeText(text);
+    if (element?.tagName === "BUTTON" || element?.getAttribute("role") === "button") return "button";
+    if (element?.tagName === "A") return "link";
+    if (CURRENCY_RE.test(value)) return "price";
+    if (STATUS_RE.test(value)) return "status";
+    if (NUMBER_RE.test(value)) return "number";
+    return "text";
+  }
+
+  function isHidden(element) {
+    if (!element || SKIP_TAGS.has(element.tagName) || SKIP_LANDMARKS.has(element.tagName)) return true;
+    const style = window.getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return true;
+    if (element.getAttribute("aria-hidden") === "true") return true;
+    return false;
+  }
+
+  function hasUsefulChild(element) {
+    return Array.from(element.children).some((child) => {
+      if (isHidden(child)) return false;
+      const text = normalizeText(child.innerText || child.textContent || "");
+      const rect = child.getBoundingClientRect();
+      return text && text.length <= 180 && rect.width >= 8 && rect.height >= 8;
+    });
+  }
+
+  function isUsefulLeafText(text) {
+    return text && text.length <= 180 && /[a-zA-Z0-9$€£₹¥]/.test(text) && !/^(home|menu|search|close)$/i.test(text);
+  }
+
+  function buildSelector(element) {
+    if (element.id) return `#${cssEscape(element.id)}`;
+    const attr = ["data-testid", "data-test", "aria-label", "name"].find((name) => element.getAttribute(name));
+    if (attr) return `${element.tagName.toLowerCase()}[${attr}="${cssEscape(element.getAttribute(attr))}"]`;
+    return buildDomPath(element);
+  }
+
+  function buildDomPath(element) {
+    const parts = [];
+    let node = element;
+    while (node && node.nodeType === Node.ELEMENT_NODE && node !== document) {
+      const tag = node.tagName.toLowerCase();
+      if (tag === "html") {
+        parts.unshift("html");
+        break;
+      }
+      const siblings = Array.from(node.parentElement?.children || []).filter((child) => child.tagName === node.tagName);
+      const index = siblings.indexOf(node) + 1;
+      parts.unshift(`${tag}:nth-of-type(${index})`);
+      node = node.parentElement;
+    }
+    return parts.join(" > ");
+  }
+
+  function cssEscape(value) {
+    if (window.CSS?.escape) return window.CSS.escape(value);
+    return String(value).replace(/["\\\\]/g, "\\\\$&");
+  }
+
+  function extractFeatures(text) {
+    const normalized = normalizeText(text).slice(0, 2500);
+    const prices = Array.from(normalized.matchAll(CURRENCY_GLOBAL_RE)).map((match) => match[0]);
+    const numbers = Array.from(normalized.matchAll(NUMBER_GLOBAL_RE)).map((match) => match[0]).slice(0, 40);
+    const statuses = Array.from(normalized.matchAll(new RegExp(STATUS_RE.source, "gi"))).map((match) => match[0]);
+    const tokens = Array.from(new Set((normalized.toLowerCase().match(/[a-z0-9]+/g) || []).filter((token) => token.length >= 2))).slice(0, 80);
+    return { prices, numbers, statuses, tokens };
+  }
+
+  function extractFields(container) {
+    const fields = [];
+    const seen = new Set();
+    const elements = [container, ...Array.from(container.querySelectorAll("*"))];
+    for (const element of elements) {
+      if (isHidden(element)) continue;
+      const text = normalizeText(element.innerText || element.textContent || "");
+      if (!isUsefulLeafText(text) || hasUsefulChild(element)) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 8 || rect.height < 8) continue;
+      const semanticType = classifyText(text, element);
+      const key = `${semanticType}:${text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fields.push({
+        semanticType,
+        text,
+        selector: buildSelector(element),
+        domPath: buildDomPath(element)
+      });
+      if (fields.length >= 80) break;
+    }
+    return fields;
+  }
+
+  function hasContainerShape(element, text, fields) {
+    const tag = element.tagName;
+    const role = element.getAttribute("role") || "";
+    const className = String(element.className || "").toLowerCase();
+    const id = String(element.id || "").toLowerCase();
+    if (["LI", "ARTICLE", "TR"].includes(tag)) return true;
+    if (["row", "listitem", "article"].includes(role)) return true;
+    if (/(card|item|product|result|row|ticket|issue|quote|listing)/.test(`${className} ${id}`)) return true;
+    return text.length >= 35 && fields.length >= 2;
+  }
+
+  function scoreContainer(container) {
+    const typeScore = { LI: 24, ARTICLE: 24, TR: 20, SECTION: 12, DIV: 8 }[container.tagName] || 5;
+    const fieldScore = Math.min(35, container.fields.length * 5);
+    const priceScore = container.fields.some((field) => field.semanticType === "price") ? 15 : 0;
+    const lengthScore = Math.max(0, 24 - Math.abs(container.text.length - 220) / 18);
+    return typeScore + fieldScore + priceScore + lengthScore;
+  }
+
+  if (window.openPulseCollectIdentityContainers) {
+    return window.openPulseCollectIdentityContainers();
+  }
+
+  const containers = [];
+  const seen = new Set();
+  for (const element of Array.from(document.body.querySelectorAll("body *"))) {
+    if (isHidden(element) || ["HTML", "BODY"].includes(element.tagName)) continue;
+    const text = normalizeText(element.innerText || element.textContent || "");
+    if (text.length < 20 || text.length > 1800) continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 16) continue;
+    const fields = extractFields(element);
+    if (!fields.length || !hasContainerShape(element, text, fields)) continue;
+    const key = `${Math.round(rect.x)}:${Math.round(rect.y)}:${text.slice(0, 160)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    containers.push({
+      text: text.slice(0, 1800),
+      tagName: element.tagName,
+      role: element.getAttribute("role") || "",
+      selector: buildSelector(element),
+      domPath: buildDomPath(element),
+      boundingBox: {
+        x: Math.round(rect.x + window.scrollX),
+        y: Math.round(rect.y + window.scrollY),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      },
+      features: extractFeatures(text),
+      fields
+    });
+  }
+  return containers.sort((a, b) => scoreContainer(b) - scoreContainer(a)).slice(0, 350);
+}
+"""
 
 _FOCUS_TRACKER_SCRIPT = """
 (() => {
@@ -340,26 +529,41 @@ async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, sou
         blocker.update(render_details)
         return ExtractedValue(found=False, value=None, details=blocker)
 
-    value = await _extract_target_value(page, target)
-    if value is None:
+    primary_extraction = await _extract_target_value(page, target)
+    extraction = primary_extraction
+    if _should_refind_by_identity(target, primary_extraction):
+        identity_extraction = await _refind_target_by_identity(page, target)
+        if _is_confident_identity_extraction(identity_extraction):
+            extraction = identity_extraction
+        elif primary_extraction is None or _is_fragile_primary_extraction(target, primary_extraction):
+            extraction = identity_extraction
+    if extraction is None or extraction.get("value") is None:
+        refind_details = extraction.get("details") if isinstance(extraction, dict) else None
+        details = {
+            "reason": "target_not_found",
+            "source": source,
+            "selector": target.get("selector"),
+            "semanticType": target.get("semanticType"),
+            **render_details,
+        }
+        if refind_details is not None:
+            details["refind"] = refind_details
         return ExtractedValue(
             found=False,
             value=None,
-            details={
-                "reason": "target_not_found",
-                "source": source,
-                "selector": target.get("selector"),
-                "semanticType": target.get("semanticType"),
-                **render_details,
-            },
+            details=details,
         )
+    extraction_details = extraction.get("details") or {}
+    if extraction_details.get("strategy") == "container_identity":
+        extraction_details = {"extractionStrategy": "container_identity", "refind": extraction_details}
     return ExtractedValue(
         found=True,
-        value=value,
+        value=extraction["value"],
         details={
             "source": source,
             "selector": target.get("selector"),
             "semanticType": target.get("semanticType"),
+            **extraction_details,
             **render_details,
         },
     )
@@ -446,7 +650,7 @@ async def _detect_security_verification(page: Page, status: int | None) -> dict[
     return None
 
 
-async def _extract_target_value(page: Page, target: dict[str, Any]) -> str | None:
+async def _extract_target_value(page: Page, target: dict[str, Any]) -> dict[str, Any] | None:
     selector = target.get("selector")
     if selector:
         locator = page.locator(selector).first
@@ -454,7 +658,7 @@ async def _extract_target_value(page: Page, target: dict[str, Any]) -> str | Non
             if await locator.count() > 0:
                 text = await locator.inner_text(timeout=1000)
                 if text.strip():
-                    return text.strip()
+                    return {"value": text.strip(), "details": {"extractionStrategy": "selector"}}
         except Exception:
             pass
 
@@ -481,5 +685,242 @@ async def _extract_target_value(page: Page, target: dict[str, Any]) -> str | Non
             dom_path,
         )
         if isinstance(text, str) and text.strip():
-            return text.strip()
+            return {"value": text.strip(), "details": {"extractionStrategy": "dom_path"}}
     return None
+
+
+def _should_refind_by_identity(target: dict[str, Any], primary_extraction: dict[str, Any] | None) -> bool:
+    if not isinstance(target.get("targetIdentity"), dict):
+        return False
+    return primary_extraction is None or _is_fragile_primary_extraction(target, primary_extraction)
+
+
+def _is_fragile_primary_extraction(target: dict[str, Any], primary_extraction: dict[str, Any]) -> bool:
+    strategy = (primary_extraction.get("details") or {}).get("extractionStrategy")
+    if strategy == "dom_path":
+        return True
+    if strategy != "selector":
+        return False
+    return _looks_like_positional_selector(target.get("selector"))
+
+
+def _looks_like_positional_selector(selector: Any) -> bool:
+    if not isinstance(selector, str):
+        return False
+    normalized = selector.strip().lower()
+    return ":nth-of-type(" in normalized or normalized.startswith(("html >", "body >"))
+
+
+def _is_confident_identity_extraction(extraction: dict[str, Any] | None) -> bool:
+    if not extraction or extraction.get("value") is None:
+        return False
+    return float(extraction.get("confidence") or 0) >= MIN_CONTAINER_REFIND_CONFIDENCE
+
+
+async def _refind_target_by_identity(page: Page, target: dict[str, Any]) -> dict[str, Any] | None:
+    identity = target.get("targetIdentity")
+    if not isinstance(identity, dict):
+        return None
+    try:
+        containers = await page.evaluate(_IDENTITY_CONTAINER_SCRIPT)
+    except Exception as exc:
+        return {
+            "value": None,
+            "details": {
+                "strategy": "container_identity",
+                "confidence": 0,
+                "reason": "container_scan_failed",
+                "error": str(exc),
+            },
+        }
+    if not isinstance(containers, list):
+        containers = []
+    attempt = _match_identity_container(target, containers)
+    if attempt is None:
+        return {
+            "value": None,
+            "details": {
+                "strategy": "container_identity",
+                "confidence": 0,
+                "reason": "no_candidate_containers",
+            },
+        }
+    if attempt["confidence"] < MIN_CONTAINER_REFIND_CONFIDENCE or attempt["value"] is None:
+        details = dict(attempt["details"])
+        details["reason"] = "low_confidence"
+        return {"value": None, "details": details}
+    return attempt
+
+
+def _match_identity_container(target: dict[str, Any], containers: list[Any]) -> dict[str, Any] | None:
+    identity = target.get("targetIdentity") or {}
+    saved_container = identity.get("container") or {}
+    saved_text = _string_or_empty(saved_container.get("text") or target.get("nearbyText"))
+    saved_tokens = _identity_tokens(identity, target)
+    if not saved_text and not saved_tokens:
+        return None
+
+    token_counts = _candidate_token_counts(containers)
+    scored: list[dict[str, Any]] = []
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        score = _score_identity_container(
+            saved_text=saved_text,
+            saved_tokens=saved_tokens,
+            saved_tag=_string_or_empty(saved_container.get("tagName")),
+            container=container,
+            token_counts=token_counts,
+        )
+        value = _value_from_identity_container(identity, target, container)
+        scored.append(
+            {
+                "container": container,
+                "confidence": score,
+                "value": value,
+            }
+        )
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item["confidence"], reverse=True)
+    best = scored[0]
+    second_confidence = scored[1]["confidence"] if len(scored) > 1 else 0
+    if best["confidence"] - second_confidence < 0.04 and second_confidence >= MIN_CONTAINER_REFIND_CONFIDENCE:
+        best["confidence"] = min(best["confidence"], second_confidence)
+        best["value"] = None
+    container = best["container"]
+    details = {
+        "strategy": "container_identity",
+        "confidence": round(best["confidence"], 3),
+        "matchedSelector": container.get("selector"),
+        "matchedDomPath": container.get("domPath"),
+        "matchedText": _string_or_empty(container.get("text"))[:300],
+    }
+    return {"value": best["value"], "confidence": best["confidence"], "details": details}
+
+
+def _score_identity_container(
+    *,
+    saved_text: str,
+    saved_tokens: set[str],
+    saved_tag: str,
+    container: dict[str, Any],
+    token_counts: dict[str, int],
+) -> float:
+    candidate_text = _string_or_empty(container.get("text"))
+    candidate_tokens = _tokens_from_features(container.get("features")) or _token_set(candidate_text)
+    coverage = _weighted_coverage(saved_tokens, candidate_tokens, token_counts)
+    jaccard = _weighted_jaccard(saved_tokens, candidate_tokens, token_counts)
+    similarity = _text_similarity(saved_text, candidate_text)
+    fields = container.get("fields") if isinstance(container.get("fields"), list) else []
+    field_presence = 1.0 if fields else 0
+    tag_bonus = 0.04 if saved_tag and saved_tag.upper() == _string_or_empty(container.get("tagName")).upper() else 0
+    score = (coverage * 0.56) + (similarity * 0.24) + (jaccard * 0.10) + (field_presence * 0.06) + tag_bonus
+    return max(0.0, min(1.0, score))
+
+
+def _identity_tokens(identity: dict[str, Any], target: dict[str, Any]) -> set[str]:
+    tokens = _tokens_from_features(identity.get("features"))
+    if not tokens:
+        container = identity.get("container") or {}
+        tokens = _token_set(_string_or_empty(container.get("text") or target.get("nearbyText")))
+    selected_value = _string_or_empty((identity.get("field") or {}).get("initialValue") or target.get("initialValue"))
+    return {token for token in tokens - _token_set(selected_value) if token not in _WEAK_TOKENS}
+
+
+def _tokens_from_features(features: Any) -> set[str]:
+    if not isinstance(features, dict):
+        return set()
+    tokens = features.get("tokens")
+    if not isinstance(tokens, list):
+        return set()
+    return {token for value in tokens if (token := _normalize_token(value))}
+
+
+def _token_set(text: str) -> set[str]:
+    return {token for token in (_normalize_token(match.group(0)) for match in _TOKEN_RE.finditer(text)) if token}
+
+
+def _normalize_token(value: Any) -> str:
+    token = str(value).lower()
+    if len(token) < 2 or token in _WEAK_TOKENS:
+        return ""
+    return token
+
+
+def _candidate_token_counts(containers: list[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        tokens = _tokens_from_features(container.get("features")) or _token_set(_string_or_empty(container.get("text")))
+        for token in tokens:
+            counts[token] = counts.get(token, 0) + 1
+    return counts
+
+
+def _token_weight(token: str, token_counts: dict[str, int]) -> float:
+    count = max(1, token_counts.get(token, 1))
+    return 1.0 / count
+
+
+def _weighted_coverage(saved_tokens: set[str], candidate_tokens: set[str], token_counts: dict[str, int]) -> float:
+    if not saved_tokens:
+        return 0.0
+    total = sum(_token_weight(token, token_counts) for token in saved_tokens)
+    if total <= 0:
+        return 0.0
+    overlap = saved_tokens & candidate_tokens
+    return sum(_token_weight(token, token_counts) for token in overlap) / total
+
+
+def _weighted_jaccard(saved_tokens: set[str], candidate_tokens: set[str], token_counts: dict[str, int]) -> float:
+    union = saved_tokens | candidate_tokens
+    if not union:
+        return 0.0
+    overlap = saved_tokens & candidate_tokens
+    return sum(_token_weight(token, token_counts) for token in overlap) / sum(_token_weight(token, token_counts) for token in union)
+
+
+def _text_similarity(saved_text: str, candidate_text: str) -> float:
+    saved = _normalize_comparison_text(saved_text)
+    candidate = _normalize_comparison_text(candidate_text)
+    if not saved or not candidate:
+        return 0.0
+    return SequenceMatcher(None, saved[:1000], candidate[:1000]).ratio()
+
+
+def _normalize_comparison_text(text: str) -> str:
+    normalized = " ".join(_TOKEN_RE.findall(text.lower()))
+    return normalized[:1200]
+
+
+def _value_from_identity_container(identity: dict[str, Any], target: dict[str, Any], container: dict[str, Any]) -> str | None:
+    field_identity = identity.get("field") if isinstance(identity.get("field"), dict) else {}
+    semantic_type = _string_or_empty(field_identity.get("semanticType") or target.get("semanticType") or "text")
+    index = field_identity.get("indexWithinContainer", 0)
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        index = 0
+    fields = container.get("fields") if isinstance(container.get("fields"), list) else []
+    matching = [
+        field
+        for field in fields
+        if isinstance(field, dict)
+        and _string_or_empty(field.get("semanticType")) == semantic_type
+        and _string_or_empty(field.get("text"))
+    ]
+    if matching:
+        selected = matching[min(max(index, 0), len(matching) - 1)]
+        return _string_or_empty(selected.get("text")) or None
+    if semantic_type == "price":
+        prices = (container.get("features") or {}).get("prices") if isinstance(container.get("features"), dict) else []
+        if isinstance(prices, list) and prices:
+            selected_price = prices[min(max(index, 0), len(prices) - 1)]
+            return _string_or_empty(selected_price) or None
+    return None
+
+
+def _string_or_empty(value: Any) -> str:
+    return value if isinstance(value, str) else ""
