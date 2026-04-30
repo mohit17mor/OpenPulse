@@ -265,12 +265,26 @@ class SessionFirstExtractor:
 
 
 async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, source: str) -> ExtractedValue:
-    response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    try:
+        response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    except Exception as exc:
+        return ExtractedValue(
+            found=False,
+            value=None,
+            details={
+                "reason": "navigation_failed",
+                "source": source,
+                "url": url,
+                "error": str(exc),
+            },
+        )
     await page.wait_for_timeout(2500)
     transient_reloads = await _recover_transient_http_ok_shell(page)
     render_details = {}
     if transient_reloads:
         render_details["renderRecovery"] = {"transientHttpOkReloads": transient_reloads}
+    if await _scroll_near_saved_target(page, target):
+        render_details["scrollRestored"] = True
     blocker = await _detect_security_verification(page, response.status if response else None)
     if blocker is not None:
         blocker["source"] = source
@@ -309,6 +323,38 @@ async def _recover_transient_http_ok_shell(page: Page, *, max_reloads: int = 3) 
         reloads += 1
         await page.wait_for_timeout(1500)
     return reloads
+
+
+async def _scroll_near_saved_target(page: Page, target: dict[str, Any]) -> bool:
+    bounding_box = target.get("boundingBox")
+    if not isinstance(bounding_box, dict):
+        return False
+    x = _number_or_none(bounding_box.get("x"))
+    y = _number_or_none(bounding_box.get("y"))
+    if y is None:
+        return False
+    scroll_y = max(0, int(y - 350))
+    try:
+        await page.evaluate(
+            """
+            ({ x, y }) => {
+              window.scrollTo(x, y);
+            }
+            """,
+            {"x": 0, "y": scroll_y, "target": bounding_box},
+        )
+        await page.wait_for_timeout(1000)
+        return True
+    except Exception:
+        return False
+
+
+def _number_or_none(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
 
 
 async def _is_transient_http_ok_shell(page: Page) -> bool:

@@ -49,6 +49,9 @@ class CheckEngine:
         if extracted.details.get("reason") == "security_verification":
             status = "blocked"
             message = "security_verification"
+        elif extracted.details.get("reason") == "navigation_failed":
+            status = "error"
+            message = "navigation_failed"
         elif not extracted.found:
             status = "matched" if condition_result.matched else "missing"
             message = condition_result.reason
@@ -359,6 +362,8 @@ def _event_type(source_type: str, status: str, message: str, condition_matched: 
         return "script_timeout" if message == "script_timeout" else "script_failed"
     if source_type == "script" and status == "missing":
         return "script_output_missing"
+    if source_type == "website" and message == "navigation_failed":
+        return "website_navigation_failed"
     if status == "blocked":
         return "page_blocked"
     if status == "missing":
@@ -386,6 +391,7 @@ def _title(event_type: str) -> str:
         "script_failed": "Script check failed",
         "script_timeout": "Script timed out",
         "script_output_missing": "Script output missing",
+        "website_navigation_failed": "Website navigation failed",
         "new_item_detected": "New item detected",
         "check_completed": "Check completed",
     }
@@ -406,6 +412,8 @@ def _event_summary(
         return "OpenPulse loaded the page but could not find the selected target."
     if event_type == "page_blocked":
         return "The website showed a security or verification page."
+    if event_type == "website_navigation_failed":
+        return "OpenPulse could not load the website for this check."
     if event_type == "new_item_detected":
         return f"New item detected: {display or current_value or '-'}."
     if event_type == "script_output_missing":
@@ -419,6 +427,7 @@ def _action_hint(event_type: str) -> str | None:
     hints = {
         "target_missing": "Open the page and repair the monitor target.",
         "page_blocked": "Open the browser session and check whether the site is asking for verification.",
+        "website_navigation_failed": "Open the browser session and rerun the check from an interactive session.",
         "script_failed": "Run the script preview and inspect stderr/output.",
         "script_timeout": "Increase the timeout or make the script finish faster.",
         "script_output_missing": "Run preview again and choose an output path that exists.",

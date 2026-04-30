@@ -74,6 +74,59 @@ class FakeTransientPage:
         return FakeLocator(self, selector)
 
 
+class FakeScrolledLocator:
+    def __init__(self, page, selector):
+        self.page = page
+        self.selector = selector
+
+    @property
+    def first(self):
+        return self
+
+    async def count(self):
+        if self.selector == "body":
+            return 1
+        return 1 if self.page.scrolled else 0
+
+    async def inner_text(self, timeout=None):
+        if self.selector == "body":
+            return "Actual page"
+        return "₹3,300"
+
+
+class FakeScrolledPage:
+    def __init__(self):
+        self.scrolled = False
+        self.scroll_calls = []
+
+    async def goto(self, url, wait_until=None, timeout=None):
+        self.url = url
+        return FakeResponse(200)
+
+    async def reload(self, wait_until=None, timeout=None):
+        return FakeResponse(200)
+
+    async def wait_for_timeout(self, timeout):
+        return None
+
+    async def title(self):
+        return ""
+
+    async def evaluate(self, script, arg=None):
+        if "window.scrollTo" in script:
+            self.scrolled = True
+            self.scroll_calls.append(arg["target"])
+        return None
+
+    def locator(self, selector):
+        return FakeScrolledLocator(self, selector)
+
+
+class FakeNavigationErrorPage:
+    async def goto(self, url, wait_until=None, timeout=None):
+        raise RuntimeError("net::ERR_HTTP2_PROTOCOL_ERROR")
+
+
 def test_browser_controller_uses_latest_open_page():
     first = FakePage()
     second = FakePage()
@@ -158,3 +211,33 @@ def test_transient_http_ok_shell_detection_is_narrow():
     assert _looks_like_transient_http_ok_shell("200 OK")
     assert not _looks_like_transient_http_ok_shell("200 OK seats found")
     assert not _looks_like_transient_http_ok_shell("OK, actual content loaded")
+
+
+async def test_extract_from_page_scrolls_near_saved_bounding_box_before_extracting():
+    page = FakeScrolledPage()
+    target = {
+        "selector": "#fare",
+        "boundingBox": {"x": 1273, "y": 1444, "width": 55, "height": 24},
+    }
+
+    extracted = await extract_from_page(page, "https://example.test/bus", target, source="test")
+
+    assert extracted.found is True
+    assert extracted.value == "₹3,300"
+    assert page.scroll_calls == [{"x": 1273, "y": 1444, "width": 55, "height": 24}]
+    assert extracted.details["scrollRestored"] is True
+
+
+async def test_extract_from_page_returns_navigation_failure_instead_of_raising():
+    extracted = await extract_from_page(
+        FakeNavigationErrorPage(),
+        "https://example.test/bus",
+        {"selector": "#fare"},
+        source="headless",
+    )
+
+    assert extracted.found is False
+    assert extracted.value is None
+    assert extracted.details["reason"] == "navigation_failed"
+    assert extracted.details["source"] == "headless"
+    assert "ERR_HTTP2_PROTOCOL_ERROR" in extracted.details["error"]

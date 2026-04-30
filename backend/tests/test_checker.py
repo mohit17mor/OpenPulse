@@ -139,3 +139,29 @@ async def test_check_engine_logs_security_verification_as_blocked(tmp_path):
     assert logs[0]["eventType"] == "page_blocked"
     assert logs[0]["severity"] == "warning"
     assert logs[0]["title"] == "Page blocked"
+
+
+async def test_check_engine_logs_website_navigation_failure_as_error(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = make_monitor(db)
+    engine = CheckEngine(
+        db,
+        FakeExtractor(
+            ExtractedValue(
+                found=False,
+                value=None,
+                details={"reason": "navigation_failed", "source": "headless", "error": "net::ERR_HTTP2_PROTOCOL_ERROR"},
+            )
+        ),
+    )
+
+    result = await engine.run_check(monitor["id"])
+
+    logs = db.list_logs()
+    assert result["status"] == "error"
+    assert logs[0]["message"] == "navigation_failed"
+    assert logs[0]["eventType"] == "website_navigation_failed"
+    assert logs[0]["severity"] == "error"
+    assert logs[0]["title"] == "Website navigation failed"
+    assert logs[0]["actionHint"] == "Open the browser session and rerun the check from an interactive session."
