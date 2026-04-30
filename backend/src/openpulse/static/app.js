@@ -43,6 +43,12 @@ function setStatus(message) {
   else $("browserStatus").textContent = message;
 }
 
+function setSaveStatus(message, kind = "info") {
+  const status = $("monitorSaveStatus");
+  status.textContent = message;
+  status.className = `saveStatus ${kind}`;
+}
+
 function setView(view) {
   state.view = view;
   const createViewActive = view === "website" || view === "script";
@@ -815,16 +821,22 @@ $("conditionType").addEventListener("change", updateConditionValueVisibility);
 
 $("monitorForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (state.source === "website") {
-    await saveWebsiteMonitor();
-  } else {
-    await saveScriptMonitor();
+  setSaveStatus("Saving monitor...", "info");
+  try {
+    if (state.source === "website") {
+      await saveWebsiteMonitor();
+    } else {
+      await saveScriptMonitor();
+    }
+  } catch (error) {
+    setSaveStatus(`Save failed: ${error.message}`, "error");
   }
 });
 
 async function saveWebsiteMonitor() {
   if (!state.selection) {
     setStatus("Select a target in the browser before saving a monitor.");
+    setSaveStatus("Select a target before saving.", "error");
     return;
   }
   await api("/api/monitors", {
@@ -841,16 +853,19 @@ async function saveWebsiteMonitor() {
     })
   });
   setStatus("Monitor saved.");
+  setSaveStatus("Monitor saved. It now appears in Saved monitors.", "success");
   await refreshMonitors();
 }
 
 async function saveScriptMonitor() {
   if (!state.scriptSelection) {
     setStatus("Run preview and select script output before saving.");
+    setSaveStatus("Run preview and select script output before saving.", "error");
     return;
   }
   if (state.scriptSelection.mode === "items" && !state.scriptSelection.idField) {
     setStatus("Choose an ID field before saving an item-list monitor.");
+    setSaveStatus("Choose an ID field before saving.", "error");
     return;
   }
   const config = scriptConfigFromForm();
@@ -879,6 +894,7 @@ async function saveScriptMonitor() {
     })
   });
   setStatus("Script monitor saved.");
+  setSaveStatus("Monitor saved. It now appears in Saved monitors.", "success");
   await refreshMonitors();
 }
 

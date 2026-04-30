@@ -612,6 +612,23 @@ label {
   margin-top: 2px;
 }
 
+.saveStatus {
+  min-height: 20px;
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.saveStatus.success {
+  color: #057a55;
+}
+
+.saveStatus.error {
+  color: var(--danger);
+}
+
 .fieldGroup {
   display: grid;
   gap: 8px;
