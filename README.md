@@ -100,11 +100,11 @@ python3 fixtures/scripts/feed_items.py
 
 Select `items[]`, set ID field to `guid`, display field to `title`, and URL field to `link`.
 
-## Sample Monitors
+## Script Library
 
-OpenPulse includes working sample monitor templates in `sample-monitors/`. Open `Sample monitors` in the sidebar, choose a template, and OpenPulse fills the script command, args, selection, condition, and interval into the Script monitor form.
+OpenPulse includes a script workspace in `scripts/`. Put your own scripts in `scripts/custom/`, or open `Scripts` in the sidebar and load one of the starter scripts. OpenPulse fills the command, args, selection, condition, and interval into the Script monitor form so you can preview and save quickly.
 
-Current samples use only the Python standard library:
+Starter scripts live in `scripts/examples/` and use only the Python standard library:
 
 - Disk usage
 - CPU usage
@@ -113,7 +113,7 @@ Current samples use only the Python standard library:
 - Process count
 - System load
 
-Samples are templates, not auto-created monitors. Review or edit the settings, run preview, then save the monitor.
+Starter scripts are templates, not auto-created monitors. Review or edit the settings, run preview, then save the monitor.
 
 ## Test
 

@@ -6,7 +6,7 @@
     "category": "Local system",
     "script": {
       "command": "python3",
-      "args": ["sample-monitors/scripts/disk_usage.py", "/"],
+      "args": ["scripts/examples/disk_usage.py", "/"],
       "cwd": ".",
       "timeoutSeconds": 10
     },
@@ -29,7 +29,7 @@
     "category": "Local system",
     "script": {
       "command": "python3",
-      "args": ["sample-monitors/scripts/folder_size.py", "sample-monitors"],
+      "args": ["scripts/examples/folder_size.py", "scripts/custom"],
       "cwd": ".",
       "timeoutSeconds": 10
     },
@@ -52,7 +52,7 @@
     "category": "Local system",
     "script": {
       "command": "python3",
-      "args": ["sample-monitors/scripts/cpu_usage.py"],
+      "args": ["scripts/examples/cpu_usage.py"],
       "cwd": ".",
       "timeoutSeconds": 10
     },
@@ -75,7 +75,7 @@
     "category": "Feeds",
     "script": {
       "command": "python3",
-      "args": ["sample-monitors/scripts/rss_feed.py", "sample-monitors/data/sample_feed.xml"],
+      "args": ["scripts/examples/rss_feed.py", "scripts/data/sample_feed.xml"],
       "cwd": ".",
       "timeoutSeconds": 10
     },
@@ -99,7 +99,7 @@
     "category": "Local system",
     "script": {
       "command": "python3",
-      "args": ["sample-monitors/scripts/process_count.py", "python"],
+      "args": ["scripts/examples/process_count.py", "python"],
       "cwd": ".",
       "timeoutSeconds": 10
     },
@@ -122,7 +122,7 @@
     "category": "Local system",
     "script": {
       "command": "python3",
-      "args": ["sample-monitors/scripts/system_load.py"],
+      "args": ["scripts/examples/system_load.py"],
       "cwd": ".",
       "timeoutSeconds": 10
     },

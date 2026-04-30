@@ -7,12 +7,12 @@ from typing import Any
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[2]
-SAMPLE_MONITORS_DIR = PROJECT_ROOT / "sample-monitors"
-SAMPLES_PATH = SAMPLE_MONITORS_DIR / "samples.json"
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+SCRIPT_TEMPLATES_PATH = SCRIPTS_DIR / "templates.json"
 
 
 def list_sample_monitors() -> list[dict[str, Any]]:
-    samples = json.loads(SAMPLES_PATH.read_text())
+    samples = json.loads(SCRIPT_TEMPLATES_PATH.read_text())
     return [_resolve_sample(sample) for sample in samples]
 
 

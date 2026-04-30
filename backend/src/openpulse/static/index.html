@@ -37,8 +37,8 @@
             <button id="samplesViewButton" class="navItem" type="button">
               <span class="navIcon">T</span>
               <span>
-                <strong>Sample monitors</strong>
-                <small>Start from a template</small>
+                <strong>Scripts</strong>
+                <small>Load starter scripts</small>
               </span>
             </button>
           </div>
@@ -69,10 +69,10 @@
           </div>
 
           <div class="navGroup">
-            <div class="navLabel">Samples folder</div>
+            <div class="navLabel">Scripts workspace</div>
             <div class="folderCard">
-              <code>/Users/mmor/scratch/openpulse/sample-monitors</code>
-              <span>ready</span>
+              <code>/Users/mmor/scratch/openpulse/scripts/custom</code>
+              <span>custom</span>
             </div>
           </div>
         </nav>
@@ -126,12 +126,12 @@
                 <input id="scriptCommand" type="text" value="python3" />
               </label>
               <label>
-                Script or inputs
-                <textarea id="scriptArgs" rows="4" placeholder="/Users/mmor/scripts/feed.py"></textarea>
+                Script path and arguments
+                <textarea id="scriptArgs" rows="4" placeholder="scripts/custom/my_script.py"></textarea>
               </label>
               <label>
                 Run from folder
-                <input id="scriptCwd" type="text" placeholder="/Users/mmor/scripts" />
+                <input id="scriptCwd" type="text" value="/Users/mmor/scratch/openpulse" />
               </label>
               <label>
                 Stop after
@@ -197,8 +197,8 @@
           <div id="samples" class="infoPanel">
             <div class="sectionHeader">
               <div>
-                <p class="kicker">Templates</p>
-                <h2>Sample monitors</h2>
+                <p class="kicker">Script library</p>
+                <h2>Starter scripts</h2>
               </div>
               <button id="refreshSamplesButton" class="ghost">Refresh</button>
             </div>

@@ -31,7 +31,7 @@ def child_attr(element, local_name, attr):
     return ""
 
 
-source = sys.argv[1] if len(sys.argv) > 1 else "sample-monitors/data/sample_feed.xml"
+source = sys.argv[1] if len(sys.argv) > 1 else "scripts/data/sample_feed.xml"
 root = ET.fromstring(read_source(source))
 items = []
 

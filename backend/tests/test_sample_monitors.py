@@ -7,7 +7,7 @@ def test_sample_monitors_api_returns_templates(tmp_path):
     app = create_app(db_path=tmp_path / "openpulse.db", start_scheduler=False)
     client = TestClient(app)
 
-    response = client.get("/api/sample-monitors")
+    response = client.get("/api/script-templates")
 
     assert response.status_code == 200
     samples = response.json()
@@ -15,6 +15,7 @@ def test_sample_monitors_api_returns_templates(tmp_path):
     assert {"disk-usage", "folder-size", "rss-feed", "process-count", "system-load"}.issubset(sample_ids)
     disk_usage = next(sample for sample in samples if sample["id"] == "disk-usage")
     assert disk_usage["script"]["command"] == "python3"
+    assert disk_usage["script"]["args"][0].endswith("scripts/examples/disk_usage.py")
     assert disk_usage["selection"]["path"] == "disk.usedPercent"
     assert disk_usage["condition"] == {"type": "greater_than", "value": 85}
 
@@ -22,7 +23,7 @@ def test_sample_monitors_api_returns_templates(tmp_path):
 def test_sample_monitor_scripts_preview_successfully(tmp_path):
     app = create_app(db_path=tmp_path / "openpulse.db", start_scheduler=False)
     client = TestClient(app)
-    samples = client.get("/api/sample-monitors").json()
+    samples = client.get("/api/script-templates").json()
 
     for sample in samples:
         response = client.post("/api/scripts/preview", json=sample["script"])

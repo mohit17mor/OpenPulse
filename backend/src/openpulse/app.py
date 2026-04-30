@@ -112,8 +112,12 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/script-templates")
+    async def script_templates() -> list[dict[str, Any]]:
+        return list_sample_monitors()
+
     @app.get("/api/sample-monitors")
-    async def sample_monitors() -> list[dict[str, Any]]:
+    async def sample_monitors_compat() -> list[dict[str, Any]]:
         return list_sample_monitors()
 
     @app.post("/api/browser/launch")
