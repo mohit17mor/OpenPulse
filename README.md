@@ -282,7 +282,7 @@ The bridge:
 
 - Responds to `/health` so OpenPulse can show whether it is online.
 - Receives OpenPulse event JSON.
-- Formats an event prompt.
+- Formats a compact, task-focused event prompt.
 - Starts the configured command.
 - Streams agent stdout/stderr by default so you can see what the agent is doing.
 
@@ -296,6 +296,20 @@ On Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\python bridges\openpulse_agent_bridge.py --port 8765 --prompt-mode arg --capture-output -- codex exec
+```
+
+The bridge prompt includes the monitor name, event summary, previous/current values, relevant source details, new feed items when present, and your monitor's agent instructions. It does not include the full raw event JSON by default, which keeps agent runs cheaper and less confusing.
+
+For debugging, append the full event JSON:
+
+```bash
+python3 bridges/openpulse_agent_bridge.py --port 8765 --prompt-mode arg --include-raw-json -- codex exec
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python bridges\openpulse_agent_bridge.py --port 8765 --prompt-mode arg --include-raw-json -- codex exec
 ```
 
 Example agent instruction on a monitor:
