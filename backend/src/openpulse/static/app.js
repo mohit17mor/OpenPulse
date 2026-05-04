@@ -11,7 +11,8 @@ const state = {
   destinationHealth: {},
   monitors: [],
   logs: [],
-  editingMonitorId: null
+  editingMonitorId: null,
+  saveStatusTimer: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -48,8 +49,21 @@ function setStatus(message) {
 
 function setSaveStatus(message, kind = "info") {
   const status = $("monitorSaveStatus");
+  if (state.saveStatusTimer) {
+    clearTimeout(state.saveStatusTimer);
+    state.saveStatusTimer = null;
+  }
   status.textContent = message;
   status.className = `saveStatus ${kind}`;
+  if (kind === "success" && message) {
+    state.saveStatusTimer = setTimeout(() => {
+      if (status.textContent === message) {
+        status.textContent = "";
+        status.className = "saveStatus";
+      }
+      state.saveStatusTimer = null;
+    }, 3500);
+  }
 }
 
 function setView(view) {
