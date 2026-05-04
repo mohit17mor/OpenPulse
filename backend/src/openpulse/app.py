@@ -188,6 +188,27 @@ def create_app(
     async def list_monitors() -> list[dict[str, Any]]:
         return db.list_monitors()
 
+    @app.put("/api/monitors/{monitor_id}")
+    async def update_monitor(monitor_id: str, request: MonitorRequest) -> dict[str, Any]:
+        target = dict(request.target)
+        target.pop("_baselineItems", None)
+        monitor = db.update_monitor(
+            monitor_id,
+            {
+                "name": request.name,
+                "url": request.url,
+                "target": target,
+                "condition": request.condition,
+                "intervalSeconds": request.intervalSeconds,
+                "enabled": request.enabled,
+                "destinationIds": request.destinationIds,
+                "agentInstructions": request.agentInstructions,
+            },
+        )
+        if monitor is None:
+            raise HTTPException(status_code=404, detail=f"Monitor not found: {monitor_id}")
+        return monitor
+
     @app.get("/api/destinations")
     async def list_destinations() -> list[dict[str, Any]]:
         return db.list_destinations()

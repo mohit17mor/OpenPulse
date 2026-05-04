@@ -107,6 +107,72 @@ def test_monitor_api_pauses_and_resumes_monitor(tmp_path):
     assert resume_response.json()["lastStatus"] == "pending"
 
 
+def test_monitor_api_updates_saved_monitor_settings(tmp_path):
+    app = create_app(
+        db_path=tmp_path / "openpulse.db",
+        extractor=FakeExtractor(),
+        start_scheduler=False,
+        start_delivery_dispatcher=False,
+    )
+    client = TestClient(app)
+    destination = client.post(
+        "/api/destinations",
+        json={
+            "name": "Agent bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/events"},
+            "enabled": True,
+        },
+    ).json()
+    create_response = client.post(
+        "/api/monitors",
+        json={
+            "name": "Price drop",
+            "url": "http://example.test/product",
+            "target": {"semanticType": "price", "initialValue": "$129.00", "selector": "#price"},
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 300,
+        },
+    )
+    monitor_id = create_response.json()["id"]
+
+    update_response = client.put(
+        f"/api/monitors/{monitor_id}",
+        json={
+            "name": "Sale mention",
+            "url": "http://example.test/product",
+            "target": {"semanticType": "price", "initialValue": "$129.00", "selector": "#price"},
+            "condition": {"type": "contains", "value": "sale"},
+            "intervalSeconds": 120,
+            "enabled": False,
+            "destinationIds": [destination["id"]],
+            "agentInstructions": "Decide whether this sale is worth opening.",
+        },
+    )
+    missing_response = client.put(
+        "/api/monitors/missing",
+        json={
+            "name": "Missing",
+            "url": "http://example.test/product",
+            "target": {"initialValue": "x"},
+            "condition": {"type": "changed"},
+            "intervalSeconds": 120,
+        },
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["name"] == "Sale mention"
+    assert updated["condition"] == {"type": "contains", "value": "sale"}
+    assert updated["intervalSeconds"] == 120
+    assert updated["enabled"] is False
+    assert updated["lastStatus"] == "paused"
+    assert updated["destinationIds"] == [destination["id"]]
+    assert updated["agentInstructions"] == "Decide whether this sale is worth opening."
+    assert client.get("/api/monitors").json()[0]["name"] == "Sale mention"
+    assert missing_response.status_code == 404
+
+
 def test_monitor_api_saves_destination_routing(tmp_path):
     app = create_app(
         db_path=tmp_path / "openpulse.db",

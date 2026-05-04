@@ -169,6 +169,77 @@ def test_database_clamps_monitor_interval_to_five_seconds(tmp_path):
     assert db.get_monitor(monitor["id"])["intervalSeconds"] == 5
 
 
+def test_database_updates_monitor_settings_without_dropping_history(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    first_destination = db.create_destination(
+        {
+            "name": "Agent bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/events"},
+        }
+    )
+    second_destination = db.create_destination(
+        {
+            "name": "Command bridge",
+            "type": "command",
+            "config": {"command": "python3", "args": ["agent.py"]},
+        }
+    )
+    monitor = db.create_monitor(
+        {
+            "name": "Price watch",
+            "url": "https://example.com/product",
+            "target": {"semanticType": "price", "initialValue": "$129.00", "selector": "#price"},
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 300,
+            "enabled": True,
+            "destinationIds": [first_destination["id"]],
+            "agentInstructions": "Initial instructions.",
+        }
+    )
+    db.create_log(
+        {
+            "monitorId": monitor["id"],
+            "status": "checked",
+            "previousValue": "$129.00",
+            "currentValue": "$129.00",
+            "conditionMatched": False,
+            "message": "number_not_less_than",
+            "details": {},
+        }
+    )
+    db.mark_check_started(monitor["id"])
+
+    updated = db.update_monitor(
+        monitor["id"],
+        {
+            "name": "Sale watch",
+            "url": "https://example.com/deal",
+            "target": {"semanticType": "price", "initialValue": "$129.00", "selector": "#sale-price"},
+            "condition": {"type": "contains", "value": "deal"},
+            "intervalSeconds": 1,
+            "enabled": False,
+            "destinationIds": [second_destination["id"], second_destination["id"]],
+            "agentInstructions": "Summarize whether the deal is worth acting on.",
+        },
+    )
+
+    assert updated["name"] == "Sale watch"
+    assert updated["url"] == "https://example.com/deal"
+    assert updated["target"]["selector"] == "#sale-price"
+    assert updated["condition"] == {"type": "contains", "value": "deal"}
+    assert updated["intervalSeconds"] == 5
+    assert updated["enabled"] is False
+    assert updated["lastStatus"] == "paused"
+    assert updated["lastError"] == "paused_by_user"
+    assert updated["checkStartedAt"] is None
+    assert updated["destinationIds"] == [second_destination["id"]]
+    assert updated["agentInstructions"] == "Summarize whether the deal is worth acting on."
+    assert db.list_logs()[0]["monitorId"] == monitor["id"]
+    assert db.update_monitor("missing", {"name": "Missing"}) is None
+
+
 def test_database_records_monitor_lifecycle_state(tmp_path):
     db = Database(tmp_path / "openpulse.db")
     db.initialize()

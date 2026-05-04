@@ -10,7 +10,8 @@ const state = {
   destinations: [],
   destinationHealth: {},
   monitors: [],
-  logs: []
+  logs: [],
+  editingMonitorId: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -113,7 +114,7 @@ function conditionFromForm() {
   }
   const type = $("conditionType").value;
   const rawValue = $("conditionValue").value.trim();
-  if (["changed", "appears", "disappears"].includes(type)) {
+  if (!conditionNeedsValue(type)) {
     return { type };
   }
   if (["greater_than", "less_than"].includes(type)) {
@@ -151,7 +152,7 @@ function updateConditionOptions() {
 
 function updateConditionValueVisibility() {
   const type = $("conditionType").value;
-  $("conditionValueRow").style.display = ["changed", "appears", "disappears", "new_item"].includes(type) ? "none" : "grid";
+  $("conditionValueRow").style.display = conditionNeedsValue(type) ? "grid" : "none";
 }
 
 function renderSelection() {
@@ -444,6 +445,31 @@ function conditionLabel(condition) {
   return `${condition.type.replaceAll("_", " ")} ${condition.value}`;
 }
 
+function conditionNeedsValue(type) {
+  return !["changed", "appears", "disappears", "new_item"].includes(type);
+}
+
+function conditionOptionsHtml(selectedType, includeNewItem = false) {
+  const options = [
+    ["changed", "changes"],
+    ["less_than", "less than"],
+    ["greater_than", "greater than"],
+    ["equals", "equals"],
+    ["contains", "contains"],
+    ["appears", "appears"],
+    ["disappears", "disappears"]
+  ];
+  if (includeNewItem) {
+    options.unshift(["new_item", "new item appears"]);
+  }
+  return options
+    .map(([value, label]) => {
+      const selected = value === selectedType ? " selected" : "";
+      return `<option value="${value}"${selected}>${label}</option>`;
+    })
+    .join("");
+}
+
 async function applyScriptLibraryItem(sample) {
   const script = sample.script || {};
   state.scriptPreview = null;
@@ -484,6 +510,9 @@ function renderMonitors() {
             <span>${escapeHtml(monitor.name)}</span>
             <span class="actions">
               <button class="secondary" data-run-check="${monitor.id}">Run Check</button>
+              <button class="secondary" data-edit-monitor="${monitor.id}">
+                ${state.editingMonitorId === monitor.id ? "Close" : "Edit"}
+              </button>
               <button class="secondary" data-toggle-monitor="${monitor.id}">
                 ${monitor.enabled ? "Pause" : "Resume"}
               </button>
@@ -518,10 +547,51 @@ function renderMonitors() {
             </div>
           </div>
           ${monitor.lastError ? `<div class="itemMeta error">Reason: ${escapeHtml(monitor.lastError)}</div>` : ""}
+          ${state.editingMonitorId === monitor.id ? renderMonitorEditForm(monitor) : ""}
         </article>
       `
     )
     .join("");
+
+  container.querySelectorAll("[data-edit-monitor]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingMonitorId = state.editingMonitorId === button.dataset.editMonitor ? null : button.dataset.editMonitor;
+      renderMonitors();
+    });
+  });
+
+  container.querySelectorAll("[data-edit-condition-type]").forEach((select) => {
+    select.addEventListener("change", () => updateEditConditionValueVisibility(select.closest("[data-monitor-edit-form]")));
+  });
+
+  container.querySelectorAll("[data-cancel-edit-monitor]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.editingMonitorId = null;
+      renderMonitors();
+    });
+  });
+
+  container.querySelectorAll("[data-monitor-edit-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const monitor = state.monitors.find((item) => item.id === form.dataset.monitorId);
+      if (!monitor) return;
+      const status = form.querySelector("[data-edit-status]");
+      status.textContent = "Saving...";
+      try {
+        await api(`/api/monitors/${monitor.id}`, {
+          method: "PUT",
+          body: JSON.stringify(monitorUpdatePayloadFromForm(monitor, form))
+        });
+        state.editingMonitorId = null;
+        setStatus("Monitor updated.");
+        await refreshMonitors();
+      } catch (error) {
+        status.textContent = `Save failed: ${error.message}`;
+        status.classList.add("error");
+      }
+    });
+  });
 
   container.querySelectorAll("[data-run-check]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -551,6 +621,110 @@ function renderMonitors() {
       await refreshMonitors();
     });
   });
+}
+
+function renderMonitorEditForm(monitor) {
+  const condition = monitor.condition || { type: "changed" };
+  const conditionValue = condition.value === undefined || condition.value === null ? "" : String(condition.value);
+  const isScriptItemMonitor = monitor.target?.sourceType === "script" && monitor.target?.selection?.mode === "items";
+  const conditionControl = isScriptItemMonitor
+    ? `
+      <label>
+        Condition
+        <input type="text" value="new item appears" disabled />
+        <input type="hidden" data-edit-condition-type value="new_item" />
+      </label>
+    `
+    : `
+      <label>
+        Condition
+        <select data-edit-condition-type>
+          ${conditionOptionsHtml(condition.type)}
+        </select>
+      </label>
+    `;
+  return `
+    <form class="monitorEditForm" data-monitor-edit-form data-monitor-id="${escapeHtml(monitor.id)}">
+      <div class="monitorEditGrid">
+        <label>
+          Monitor name
+          <input data-edit-name type="text" value="${escapeHtml(monitor.name)}" />
+        </label>
+        ${conditionControl}
+        <label data-edit-condition-value-row class="${conditionNeedsValue(condition.type) ? "" : "hidden"}">
+          Condition value
+          <input data-edit-condition-value type="text" value="${escapeHtml(conditionValue)}" />
+        </label>
+        <label>
+          Check interval seconds
+          <input data-edit-interval type="number" min="5" value="${escapeHtml(monitor.intervalSeconds)}" />
+        </label>
+        <label class="checkToggle">
+          <input data-edit-enabled type="checkbox"${monitor.enabled ? " checked" : ""} />
+          <span>Enabled</span>
+        </label>
+        <div class="fieldGroup monitorEditWide">
+          <div class="fieldLabel">Send matched events to</div>
+          <div class="destinationPicker">${renderDestinationCheckboxes(monitor.destinationIds)}</div>
+        </div>
+        <label class="monitorEditWide">
+          Agent instructions
+          <textarea data-edit-agent-instructions rows="4" placeholder="Tell the selected agent what to do when this monitor matches.">${escapeHtml(monitor.agentInstructions || "")}</textarea>
+        </label>
+      </div>
+      <div class="editActions">
+        <button type="submit">Save changes</button>
+        <button type="button" class="ghost" data-cancel-edit-monitor>Cancel</button>
+        <span class="inlineStatus" data-edit-status role="status" aria-live="polite"></span>
+      </div>
+    </form>
+  `;
+}
+
+function renderDestinationCheckboxes(selectedDestinationIds = []) {
+  if (state.destinations.length === 0) {
+    return '<p class="subtle">Log only. Add agents from the Agents view.</p>';
+  }
+  const selected = new Set(selectedDestinationIds);
+  return state.destinations
+    .map(
+      (destination) => `
+        <label class="checkRow">
+          <input data-edit-destination type="checkbox" value="${escapeHtml(destination.id)}"${selected.has(destination.id) ? " checked" : ""} />
+          <span>
+            <strong>${escapeHtml(destination.name)}</strong>
+            <small>${escapeHtml(destination.type)} · ${escapeHtml(state.destinationHealth[destination.id]?.status || "unknown")}</small>
+          </span>
+        </label>
+      `
+    )
+    .join("");
+}
+
+function updateEditConditionValueVisibility(form) {
+  if (!form) return;
+  const type = form.querySelector("[data-edit-condition-type]").value;
+  form.querySelector("[data-edit-condition-value-row]").classList.toggle("hidden", !conditionNeedsValue(type));
+}
+
+function monitorUpdatePayloadFromForm(monitor, form) {
+  const type = form.querySelector("[data-edit-condition-type]").value;
+  const rawValue = form.querySelector("[data-edit-condition-value]").value.trim();
+  const condition = conditionNeedsValue(type)
+    ? ["greater_than", "less_than"].includes(type)
+      ? { type, value: Number(rawValue) }
+      : { type, value: rawValue }
+    : { type };
+  return {
+    name: form.querySelector("[data-edit-name]").value.trim() || monitor.name || "OpenPulse monitor",
+    url: monitor.url,
+    target: monitor.target,
+    condition,
+    intervalSeconds: Number(form.querySelector("[data-edit-interval]").value || 300),
+    enabled: form.querySelector("[data-edit-enabled]").checked,
+    destinationIds: Array.from(form.querySelectorAll("[data-edit-destination]:checked")).map((input) => input.value),
+    agentInstructions: form.querySelector("[data-edit-agent-instructions]").value.trim()
+  };
 }
 
 function destinationNames(destinationIds = []) {
@@ -1058,5 +1232,7 @@ await refreshLogs();
 setInterval(refreshSelection, 1500);
 setInterval(async () => {
   await refreshLogs();
-  await refreshMonitors();
+  if (!state.editingMonitorId) {
+    await refreshMonitors();
+  }
 }, 5000);

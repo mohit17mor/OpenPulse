@@ -210,6 +210,50 @@ class Database:
                 (json.dumps(target), monitor_id),
             )
 
+    def update_monitor(self, monitor_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        destination_ids = list(dict.fromkeys(payload.get("destinationIds") or []))
+        interval_seconds = max(5, int(payload.get("intervalSeconds") or 300))
+        enabled = bool(payload.get("enabled", True))
+        status = "pending" if enabled else "paused"
+        error = None if enabled else "paused_by_user"
+        next_check_at = utc_now()
+        with self.connect() as conn:
+            existing = conn.execute("select id from monitors where id = ?", (monitor_id,)).fetchone()
+            if existing is None:
+                return None
+            conn.execute(
+                """
+                update monitors
+                set name = ?,
+                    url = ?,
+                    target_json = ?,
+                    condition_json = ?,
+                    interval_seconds = ?,
+                    enabled = ?,
+                    next_check_at = ?,
+                    last_status = ?,
+                    last_error = ?,
+                    check_started_at = null,
+                    agent_instructions = ?
+                where id = ?
+                """,
+                (
+                    payload["name"],
+                    payload["url"],
+                    json.dumps(payload["target"]),
+                    json.dumps(payload["condition"]),
+                    interval_seconds,
+                    1 if enabled else 0,
+                    next_check_at,
+                    status,
+                    error,
+                    payload.get("agentInstructions") or "",
+                    monitor_id,
+                ),
+            )
+            self._set_monitor_destinations(conn, monitor_id, destination_ids)
+        return self.get_monitor(monitor_id)
+
     def set_monitor_enabled(self, monitor_id: str, enabled: bool) -> dict[str, Any] | None:
         status = "pending" if enabled else "paused"
         error = None if enabled else "paused_by_user"

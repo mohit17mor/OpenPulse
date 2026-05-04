@@ -688,6 +688,62 @@ label {
   overflow-wrap: anywhere;
 }
 
+.monitorEditForm {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.monitorEditGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.monitorEditWide {
+  grid-column: 1 / -1;
+}
+
+.checkToggle {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  min-height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.checkToggle input {
+  width: auto;
+}
+
+.checkToggle span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.editActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.inlineStatus {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.inlineStatus.error {
+  color: var(--danger);
+}
+
 .sampleGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
@@ -1016,7 +1072,12 @@ label {
 
   .scriptForm,
   .itemFieldGrid,
-  .destinationForm {
+  .destinationForm,
+  .monitorEditGrid {
     grid-template-columns: 1fr;
+  }
+
+  .monitorEditWide {
+    grid-column: auto;
   }
 }
