@@ -47,9 +47,8 @@ Requirements:
 
 - Python 3.11+
 - Chrome or Chromium
-- macOS or Linux recommended
 
-Install:
+Install on macOS, Linux, or WSL:
 
 ```bash
 python3 -m venv .venv
@@ -68,11 +67,42 @@ Run:
 .venv/bin/uvicorn openpulse.app:app --app-dir backend/src --reload --host 127.0.0.1 --port 8000
 ```
 
+Install on Windows PowerShell:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python -m pip install -r backend\requirements-dev.txt -e backend
+```
+
+If Playwright cannot find a browser:
+
+```powershell
+.\.venv\Scripts\python -m playwright install chromium
+```
+
+Run:
+
+```powershell
+.\.venv\Scripts\python -m uvicorn openpulse.app:app --app-dir backend/src --reload --host 127.0.0.1 --port 8000
+```
+
 Open:
 
 ```text
 http://127.0.0.1:8000
 ```
+
+## Platform Support
+
+OpenPulse is built on Python, FastAPI, SQLite, and Playwright, so the core app is intended to work on macOS, Linux, Windows, and WSL.
+
+Current testing status:
+
+- macOS: actively used during development.
+- Linux/WSL: expected to work with the documented commands.
+- Windows: expected to work with PowerShell commands, but less exercised than macOS.
+
+Some bundled script examples use Unix-style commands such as `python3`, `bash`, `ps`, or `/proc/stat`. On Windows, use the PowerShell commands above and change script monitor commands from `python3` to `python` or `py` if needed.
 
 ## First Demo: Website Price Monitor
 
@@ -130,6 +160,13 @@ Default model:
 
 ```bash
 export OPENPULSE_GEMINI_MODEL="gemini-2.5-flash-lite"
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:GOOGLE_API_KEY="..."
+$env:OPENPULSE_GEMINI_MODEL="gemini-2.5-flash-lite"
 ```
 
 The LLM is not used for every check. Saved network monitors use deterministic recipes: find the same entity by stable identity fields, then read the configured value path. If the entity disappears, OpenPulse reports it as missing instead of reading the wrong list item.
@@ -229,6 +266,12 @@ For CLIs that do not expose native webhooks, run the bundled bridge:
 python3 bridges/openpulse_agent_bridge.py --port 8765 --prompt-mode arg -- codex exec
 ```
 
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python bridges\openpulse_agent_bridge.py --port 8765 --prompt-mode arg -- codex exec
+```
+
 Then create a webhook destination pointed at:
 
 ```text
@@ -247,6 +290,12 @@ To hide agent output in the bridge terminal:
 
 ```bash
 python3 bridges/openpulse_agent_bridge.py --port 8765 --prompt-mode arg --capture-output -- codex exec
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python bridges\openpulse_agent_bridge.py --port 8765 --prompt-mode arg --capture-output -- codex exec
 ```
 
 Example agent instruction on a monitor:
@@ -294,10 +343,22 @@ Run tests:
 .venv/bin/pytest backend -q
 ```
 
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend -q
+```
+
 Run the app:
 
 ```bash
 .venv/bin/uvicorn openpulse.app:app --app-dir backend/src --reload --host 127.0.0.1 --port 8000
+```
+
+On Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\python -m uvicorn openpulse.app:app --app-dir backend/src --reload --host 127.0.0.1 --port 8000
 ```
 
 Useful paths:
