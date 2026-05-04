@@ -1,53 +1,124 @@
 # OpenPulse
 
-OpenPulse is a local-first visual website monitor. Open a controlled browser, press `M` on a public page, select a highlighted fact, save a condition, and inspect local check logs.
+OpenPulse is a local-first monitor for websites, scripts, feeds, and anything else you can turn into browser state or command output.
 
-This MVP intentionally avoids npm, browser extensions, login handling, CAPTCHA handling, and always-on external services. The runtime is Python/FastAPI with browser-native JavaScript served as static files.
+It is built for the annoying gap between simple cron jobs and expensive always-on AI agents: you set up a monitor once, OpenPulse checks it deterministically, and agents are only woken when something actually matters.
 
-## Setup
+## What It Does
+
+- Opens a managed Chromium browser so you can select page content visually.
+- Captures DOM context and recent network responses during setup.
+- Uses an optional one-time Google AI Studio setup step to choose a stable monitoring recipe for complex pages.
+- Runs saved monitors on a local scheduler.
+- Runs local script monitors from plain text, JSON scalar values, or JSON item lists.
+- Sends matched events to webhooks, local commands, or agent bridges such as Codex and Claude.
+- Supports one-shot triggers so threshold monitors do not wake agents on every matching check.
+- Keeps logs and delivery history in a local SQLite database.
+
+OpenPulse does not keep an LLM in the polling loop. The intended shape is: use intelligence while setting up the monitor if it helps, then monitor cheaply with deterministic checks.
+
+## Why This Exists
+
+People often ask AI agents to keep checking things:
+
+- "Tell me when this price crosses a threshold."
+- "Watch this website and tell me if this text changes."
+- "Check this feed every few minutes and summarize new items."
+- "Run this script and alert me if the number is too high."
+- "Wake Codex when this local condition becomes true."
+
+That burns tokens and keeps the agent doing boring polling work. OpenPulse does the boring part locally and wakes the agent only when a saved rule matches.
+
+## Current Status
+
+This is an early local-first MVP. It is useful, but intentionally small:
+
+- No hosted service.
+- No browser extension.
+- No user accounts.
+- No CAPTCHA bypassing.
+- No promise that every complex website can be monitored reliably.
+
+For protected pages, OpenPulse works best when the managed browser session is already logged in or already past any interactive checks.
+
+## Quick Start
+
+Requirements:
+
+- Python 3.11+
+- Chrome or Chromium
+- macOS or Linux recommended
+
+Install:
 
 ```bash
-cd /Users/mmor/scratch/openpulse
 python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements-dev.txt -e backend
 ```
 
-If Playwright cannot find a local Chrome installation, install Chromium with:
+If Playwright cannot find a browser:
 
 ```bash
 .venv/bin/playwright install chromium
 ```
 
-## Run
+Run:
 
 ```bash
-cd /Users/mmor/scratch/openpulse
 .venv/bin/uvicorn openpulse.app:app --app-dir backend/src --reload --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000`.
+Open:
 
-## Try The Fixture
+```text
+http://127.0.0.1:8000
+```
 
-1. Click `Launch`.
-2. Keep the default URL: `http://127.0.0.1:8000/fixtures/product.html`.
-3. Click `Navigate`.
-4. In the controlled browser window, press `M`.
-5. Click the highlighted price or drag a rectangle around the product details.
-6. Save a monitor with `less than 100`.
-7. Change the saved monitor URL to `http://127.0.0.1:8000/fixtures/product_changed.html` in the database or create a monitor from that fixture to test a matched check.
+## First Demo: Website Price Monitor
 
-## Browser Sessions And Protected Pages
+1. Open OpenPulse.
+2. Click `Launch browser`.
+3. Use the default fixture URL:
 
-OpenPulse checks use the already-launched app browser session when one exists. This helps with pages that behave differently in a fresh headless browser. If no app browser is open, checks fall back to a separate headless browser.
+   ```text
+   http://127.0.0.1:8000/fixtures/product.html
+   ```
 
-If a site serves a bot/security verification page, logs show `blocked` with `security_verification` instead of a generic missing target.
+4. Click `Go`.
+5. In the managed browser, press `M` or use `Select on page`.
+6. Click the highlighted price.
+7. Set a condition such as `less than 100`.
+8. Choose a trigger policy:
+   - `Every matching check`
+   - `Only first match`
+9. Save the monitor.
+10. Run a check from `Saved monitors`.
 
-## Smart Website Setup
+To test a changed fixture, open:
 
-When the controlled browser is open, OpenPulse records recent JSON `fetch`/XHR responses alongside the existing DOM selection metadata. During monitor setup it can send a compact, redacted candidate packet to Google AI Studio to choose between a DOM-backed recipe and a network-backed recipe.
+```text
+http://127.0.0.1:8000/fixtures/product_changed.html
+```
 
-Set one of these environment variables before starting the server:
+## Website Monitors
+
+Website monitors start from a visual selection. OpenPulse stores the selected target and enough surrounding context to re-check it later.
+
+For straightforward pages, the DOM path and selector are usually enough. For dynamic pages where list order or rendered DOM changes often, OpenPulse can use recent network responses captured during setup to build a more stable recipe.
+
+Checks prefer the already-launched browser session when one is available. This helps with pages that behave differently in a fresh headless browser. If no managed browser is open, checks fall back to a separate headless browser.
+
+If a site shows a bot/security verification page, OpenPulse logs the check as blocked instead of pretending the target simply disappeared.
+
+## Optional Smart Setup
+
+For complex sites, OpenPulse can make one cheap LLM call during monitor setup. The call receives a compact, redacted candidate packet and decides whether the monitor should use:
+
+- DOM extraction
+- Network extraction
+- A fallback recipe
+
+Set one of these before starting the server:
 
 ```bash
 export GOOGLE_API_KEY="..."
@@ -55,89 +126,187 @@ export GOOGLE_API_KEY="..."
 export GEMINI_API_KEY="..."
 ```
 
-The default model is `gemini-2.5-flash-lite`; override it with:
+Default model:
 
 ```bash
 export OPENPULSE_GEMINI_MODEL="gemini-2.5-flash-lite"
 ```
 
-The LLM is only used while creating the monitor. Saved network monitors use deterministic recipes: they scan the captured response collection, find the same entity by stable identity fields, and then read the configured value path. If the entity disappears, the check reports it as missing instead of reading another item at the old list index.
+The LLM is not used for every check. Saved network monitors use deterministic recipes: find the same entity by stable identity fields, then read the configured value path. If the entity disappears, OpenPulse reports it as missing instead of reading the wrong list item.
+
+## Script Monitors
+
+Script monitors let OpenPulse watch anything you can print to stdout.
+
+Flow:
+
+1. Open `Script monitor`.
+2. Enter a command, arguments, working directory, and timeout.
+3. Click `Run preview`.
+4. Select a value or item list from the output.
+5. Save the monitor with a condition and trigger policy.
+
+Supported output:
+
+- Plain text stdout as a single value.
+- JSON scalar paths such as `btc.price`.
+- JSON arrays as item-list monitors.
+
+For item-list monitors, choose a stable ID field such as `guid`, `id`, or Jira `key`. OpenPulse stores the preview items as the baseline and only logs new IDs seen in later runs.
+
+Example scripts:
+
+```bash
+python3 fixtures/scripts/price_json.py
+python3 fixtures/scripts/plain_count.py
+python3 fixtures/scripts/feed_items.py
+```
+
+## Script Library
+
+Open `Scripts` in the sidebar to load starter monitors from `scripts/examples/`.
+
+Included examples:
+
+- Disk usage
+- Folder size
+- CPU usage
+- RSS/feed item detection
+- Process count
+- System load
+
+Put your own scripts in:
+
+```text
+scripts/custom/
+```
+
+Starter scripts are templates. OpenPulse fills the form, then you preview, inspect, adjust, and save.
+
+## Trigger Policies
+
+Each monitor can decide when matched events should wake destinations.
+
+`Every matching check`
+
+The default. If the condition matches every check, OpenPulse sends a delivery every time.
+
+`Only first match`
+
+OpenPulse sends the first matched delivery and then suppresses future deliveries while the same rule stays armed. Checks and logs continue, but agents are not woken repeatedly.
+
+Changing the condition or trigger policy resets the one-shot state. Changing the schedule does not.
+
+This is useful for threshold-style monitors such as:
+
+- BTC above a target price
+- Flight price below a target price
+- A product becoming available
+- A page containing a specific phrase
 
 ## Agent Destinations
 
-OpenPulse can push matched events to agents without keeping an LLM in the polling loop. Create destinations from the `Agents` sidebar view, then select one or more destinations when saving a monitor.
+OpenPulse can send matched events to destinations. A monitor can route to zero, one, or many destinations.
 
 Supported destination types:
 
-- Webhook: sends the OpenPulse event JSON to a local or remote HTTP endpoint.
-- Local command: runs a command without shell mode and sends the OpenPulse event JSON to stdin.
+- Webhook
+- Local command
+- Codex bridge preset
+- Claude bridge preset
 
-If a monitor has no destinations selected, matched events stay local in the event log only. With multiple agents, routing is explicit: each monitor stores the destination IDs it should wake.
+If no destination is selected, matched events stay local in OpenPulse logs.
 
-For CLIs that do not expose native webhooks, use the bundled bridge:
+## Agent Bridge
+
+For CLIs that do not expose native webhooks, run the bundled bridge:
 
 ```bash
 python3 bridges/openpulse_agent_bridge.py --port 8765 --prompt-mode arg -- codex exec
 ```
 
-Then add a webhook destination pointed at `http://127.0.0.1:8765`.
+Then create a webhook destination pointed at:
 
-The `Agents` view includes Codex and Claude bridge presets, shows the bridge command to run, and checks whether each destination is online without waking the agent. The bridge prints received events, the agent command it starts, and completion/failure status. Agent stdout/stderr is streamed to the bridge terminal by default; add `--capture-output` if you want the bridge to hide command output.
-
-## Script Monitors
-
-OpenPulse can run local scripts on the same scheduler. The setup flow mirrors website monitoring:
-
-1. Choose `Script`.
-2. Enter command, args, working directory, and timeout.
-3. Click `Run Preview`.
-4. Select a scalar output field or a JSON array of items.
-5. Save the monitor.
-
-Plain text stdout is treated as one value. JSON stdout is rendered as selectable scalar paths and item-list arrays. For item-list monitors, choose a stable ID field such as `guid`, `id`, or Jira `key`; OpenPulse stores the preview items as the baseline and logs only new IDs seen in later runs.
-
-Example scalar JSON:
-
-```bash
-python3 fixtures/scripts/price_json.py
+```text
+http://127.0.0.1:8765
 ```
 
-Select `btc.price` and choose a numeric condition.
+The bridge:
 
-Example plain text:
+- Responds to `/health` so OpenPulse can show whether it is online.
+- Receives OpenPulse event JSON.
+- Formats an event prompt.
+- Starts the configured command.
+- Streams agent stdout/stderr by default so you can see what the agent is doing.
+
+To hide agent output in the bridge terminal:
 
 ```bash
-python3 fixtures/scripts/plain_count.py
+python3 bridges/openpulse_agent_bridge.py --port 8765 --prompt-mode arg --capture-output -- codex exec
 ```
 
-Select `$stdout`.
+Example agent instruction on a monitor:
 
-Example item-list snapshot:
-
-```bash
-python3 fixtures/scripts/feed_items.py
+```text
+Summarize the matched event and tell me whether it needs action.
 ```
 
-Select `items[]`, set ID field to `guid`, display field to `title`, and URL field to `link`.
+## Interesting Things To Monitor
 
-## Script Library
+OpenPulse is not limited to websites. Good demos are things people currently waste agent tokens polling:
 
-OpenPulse includes a script workspace in `scripts/`. Put your own scripts in `scripts/custom/`, or open `Scripts` in the sidebar and load one of the starter scripts. OpenPulse fills the command, args, selection, condition, and interval into the Script monitor form so you can preview and save quickly.
+- A crypto or stock page crossing a threshold.
+- A flight or bus price becoming cheap enough.
+- A product changing from sold out to available.
+- A WhatsApp Web or internal dashboard text changing in an already-open browser session.
+- New items in an RSS feed or Hacker News search.
+- Disk usage, CPU usage, or process count crossing a threshold.
+- A local build artifact, folder size, or generated report changing.
+- A script that checks an API and prints JSON.
 
-Starter scripts live in `scripts/examples/` and use only the Python standard library:
+The sweet spot: a cheap deterministic check plus a one-time agent wakeup only when the check matters.
 
-- Disk usage
-- CPU usage
-- Folder size
-- RSS feed item detection
-- Process count
-- System load
+## Data And Privacy
 
-Starter scripts are templates, not auto-created monitors. Review or edit the settings, run preview, then save the monitor.
+OpenPulse stores monitor state locally in SQLite:
 
-## Test
+```text
+backend/data/openpulse.db
+```
+
+Browser profile data lives under:
+
+```text
+data/browser-profile/
+```
+
+If smart setup is enabled, a compact setup packet may be sent to the configured Google AI Studio model. Regular checks do not call the LLM.
+
+## Development
+
+Run tests:
 
 ```bash
-cd /Users/mmor/scratch/openpulse
 .venv/bin/pytest backend -q
 ```
+
+Run the app:
+
+```bash
+.venv/bin/uvicorn openpulse.app:app --app-dir backend/src --reload --host 127.0.0.1 --port 8000
+```
+
+Useful paths:
+
+```text
+backend/src/openpulse/       FastAPI app and monitor runtime
+backend/src/openpulse/static Browser UI
+backend/tests/               Test suite
+bridges/                     Agent bridge
+fixtures/                    Local demo pages and scripts
+scripts/                     Script monitor workspace
+```
+
+## Notes
+
+OpenPulse is local-first software. Be respectful of websites, rate limits, and terms of service. It is meant for personal monitoring, internal workflows, and demos where you control the environment or have permission to monitor.
