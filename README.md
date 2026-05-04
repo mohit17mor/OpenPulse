@@ -2,7 +2,7 @@
 
 OpenPulse is a local-first visual website monitor. Open a controlled browser, press `M` on a public page, select a highlighted fact, save a condition, and inspect local check logs.
 
-This MVP intentionally avoids npm, browser extensions, LLMs, APIs, login handling, CAPTCHA handling, and external services. The runtime is Python/FastAPI with browser-native JavaScript served as static files.
+This MVP intentionally avoids npm, browser extensions, login handling, CAPTCHA handling, and always-on external services. The runtime is Python/FastAPI with browser-native JavaScript served as static files.
 
 ## Setup
 
@@ -42,6 +42,26 @@ Open `http://127.0.0.1:8000`.
 OpenPulse checks use the already-launched app browser session when one exists. This helps with pages that behave differently in a fresh headless browser. If no app browser is open, checks fall back to a separate headless browser.
 
 If a site serves a bot/security verification page, logs show `blocked` with `security_verification` instead of a generic missing target.
+
+## Smart Website Setup
+
+When the controlled browser is open, OpenPulse records recent JSON `fetch`/XHR responses alongside the existing DOM selection metadata. During monitor setup it can send a compact, redacted candidate packet to Google AI Studio to choose between a DOM-backed recipe and a network-backed recipe.
+
+Set one of these environment variables before starting the server:
+
+```bash
+export GOOGLE_API_KEY="..."
+# or
+export GEMINI_API_KEY="..."
+```
+
+The default model is `gemini-2.5-flash-lite`; override it with:
+
+```bash
+export OPENPULSE_GEMINI_MODEL="gemini-2.5-flash-lite"
+```
+
+The LLM is only used while creating the monitor. Saved network monitors use deterministic recipes: they scan the captured response collection, find the same entity by stable identity fields, and then read the configured value path. If the entity disappears, the check reports it as missing instead of reading another item at the old list index.
 
 ## Agent Destinations
 

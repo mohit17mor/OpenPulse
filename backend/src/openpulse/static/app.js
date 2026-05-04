@@ -567,6 +567,12 @@ function monitorSummary(monitor) {
     }
     return `Watching script value: ${selection.path || "full output"}`;
   }
+  if (monitor.target?.sourceType === "network") {
+    const recipe = monitor.target.networkRecipe || {};
+    const label = recipe.valueLabel || monitor.target.semanticType || "selected value";
+    const identity = recipe.identity ? Object.keys(recipe.identity).join(", ") : "saved identity";
+    return `Watching ${label} from network data. Recognizes the item by ${identity}.`;
+  }
   return `Watching ${monitor.target?.semanticType || "selected target"} on ${monitor.url}`;
 }
 

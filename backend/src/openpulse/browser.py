@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from contextlib import suppress
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 import re
 from pathlib import Path
@@ -10,6 +13,13 @@ from typing import Any
 from playwright.async_api import Browser, BrowserContext, Page, Playwright, async_playwright
 
 from openpulse.checker import ExtractedValue
+from openpulse.smart_setup import (
+    NetworkRecord,
+    SmartSetupService,
+    build_default_smart_setup_service,
+    extract_network_recipe,
+    network_record_from_response,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -232,9 +242,54 @@ def _binding_page(source: Any) -> Page | None:
     return page if page is not None else None
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+@dataclass
+class _PageNetworkCapture:
+    records: list[NetworkRecord] = field(default_factory=list)
+    sequence: int = 0
+    pending: set[asyncio.Task[Any]] = field(default_factory=set)
+
+    def attach(self, page: Page) -> None:
+        if not hasattr(page, "on"):
+            return
+        page.on("response", lambda response: self._schedule(response))
+
+    def _schedule(self, response: Any) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(self._capture(response))
+        self.pending.add(task)
+        task.add_done_callback(lambda completed: self.pending.discard(completed))
+
+    async def _capture(self, response: Any) -> None:
+        self.sequence += 1
+        record = await network_record_from_response(
+            response,
+            sequence=self.sequence,
+            captured_at=_utc_now(),
+        )
+        if record is not None:
+            self.records.append(record)
+
+    async def drain(self) -> None:
+        if self.pending:
+            await asyncio.gather(*list(self.pending), return_exceptions=True)
+
+
 class BrowserController:
-    def __init__(self, *, profile_dir: str | Path = DEFAULT_BROWSER_PROFILE_DIR):
+    def __init__(
+        self,
+        *,
+        profile_dir: str | Path = DEFAULT_BROWSER_PROFILE_DIR,
+        smart_setup: SmartSetupService | Any | None = None,
+    ):
         self.profile_dir = Path(profile_dir)
+        self.smart_setup = smart_setup if smart_setup is not None else build_default_smart_setup_service()
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -244,6 +299,8 @@ class BrowserController:
         self._ignore_new_pages = 0
         self._bindings_exposed = False
         self.latest_selection: dict[str, Any] | None = None
+        self._recent_network_records: deque[NetworkRecord] = deque(maxlen=120)
+        self._network_sequence = 0
 
     async def launch(self) -> dict[str, str]:
         if self.has_active_session():
@@ -383,6 +440,7 @@ class BrowserController:
         if page_id not in self._prepared_page_ids:
             self._prepared_page_ids.add(page_id)
             page.on("close", lambda _page: self._handle_page_closed(page))
+            page.on("response", lambda response: self._schedule_network_capture(response))
 
     def _handle_page_closed(self, closed_page: Page) -> None:
         self._prepared_page_ids.discard(id(closed_page))
@@ -412,7 +470,10 @@ class BrowserController:
             page = _binding_page(_source)
             if page is not None:
                 self._activate_page(page)
-            self.latest_selection = selection
+            enriched = dict(selection)
+            if self.smart_setup is not None:
+                enriched = await self.smart_setup.prepare_selection(enriched, list(self._recent_network_records))
+            self.latest_selection = enriched
 
         async def focus_binding(_source: Any, _payload: dict[str, Any] | None = None) -> None:
             page = _binding_page(_source)
@@ -430,6 +491,23 @@ class BrowserController:
         await self.context.expose_binding("openPulsePageFocused", focus_binding)
         await self.context.expose_binding("openPulseMonitorModeEnabled", monitor_mode_binding)
         self._bindings_exposed = True
+
+    def _schedule_network_capture(self, response: Any) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._capture_network_response(response))
+
+    async def _capture_network_response(self, response: Any) -> None:
+        self._network_sequence += 1
+        record = await network_record_from_response(
+            response,
+            sequence=self._network_sequence,
+            captured_at=_utc_now(),
+        )
+        if record is not None:
+            self._recent_network_records.append(record)
 
     async def inject_overlay(self, page: Page) -> None:
         overlay_path = STATIC_DIR / "overlay.js"
@@ -503,6 +581,9 @@ class SessionFirstExtractor:
 
 
 async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, source: str) -> ExtractedValue:
+    network_capture = _PageNetworkCapture()
+    if target.get("networkRecipe"):
+        network_capture.attach(page)
     try:
         response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
     except Exception as exc:
@@ -518,6 +599,7 @@ async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, sou
         )
     await page.wait_for_timeout(2500)
     transient_reloads = await _recover_transient_http_ok_shell(page)
+    await network_capture.drain()
     render_details = {}
     if transient_reloads:
         render_details["renderRecovery"] = {"transientHttpOkReloads": transient_reloads}
@@ -528,6 +610,15 @@ async def extract_from_page(page: Page, url: str, target: dict[str, Any], *, sou
         blocker["source"] = source
         blocker.update(render_details)
         return ExtractedValue(found=False, value=None, details=blocker)
+
+    if target.get("networkRecipe"):
+        network_extraction = extract_network_recipe(network_capture.records, target["networkRecipe"])
+        details = dict(network_extraction.details)
+        details["source"] = source
+        if network_extraction.found:
+            details["extractionStrategy"] = "network_recipe"
+            return ExtractedValue(found=True, value=network_extraction.value, details={**details, **render_details})
+        return ExtractedValue(found=False, value=None, details={**details, **render_details})
 
     primary_extraction = await _extract_target_value(page, target)
     extraction = primary_extraction

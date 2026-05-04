@@ -39,8 +39,10 @@ class FakePage:
 class FakeContext:
     def __init__(self, pages):
         self.pages = pages
+        self.bindings = {}
 
     async def expose_binding(self, name, callback):
+        self.bindings[name] = callback
         return None
 
     async def add_init_script(self, script):
@@ -187,6 +189,66 @@ class FakeNavigationErrorPage:
         raise RuntimeError("net::ERR_HTTP2_PROTOCOL_ERROR")
 
 
+class FakeSmartSetup:
+    def __init__(self):
+        self.calls = []
+
+    async def prepare_selection(self, selection, records):
+        self.calls.append((selection, records))
+        return {
+            **selection,
+            "sourceType": "network",
+            "networkRecipe": {"type": "network_json"},
+            "smartSetup": {"status": "recipe_verified"},
+        }
+
+
+class FakeRequest:
+    method = "POST"
+    resource_type = "fetch"
+    post_data = "{}"
+
+
+class FakeNetworkResponse:
+    status = 200
+    url = "https://example.test/api/search"
+    headers = {"content-type": "application/json"}
+    request = FakeRequest()
+
+    def __init__(self, body):
+        self.body = body
+
+    async def text(self):
+        return self.body
+
+
+class FakeNetworkRecipePage:
+    def __init__(self, body):
+        self.handlers = {}
+        self.body = body
+
+    def on(self, event, handler):
+        self.handlers[event] = handler
+
+    async def goto(self, url, wait_until=None, timeout=None):
+        self.url = url
+        if handler := self.handlers.get("response"):
+            handler(FakeNetworkResponse(self.body))
+        return FakeResponse(200)
+
+    async def wait_for_timeout(self, timeout):
+        return None
+
+    async def title(self):
+        return ""
+
+    async def evaluate(self, script, arg=None):
+        return None
+
+    def locator(self, selector):
+        return FakeLocator(self, selector)
+
+
 class FakeIdentityLocator:
     def __init__(self, page, selector):
         self.page = page
@@ -245,6 +307,57 @@ def test_browser_controller_uses_latest_open_page():
     controller.context = FakeContext([first, second])
 
     assert controller._latest_open_page() is second
+
+
+async def test_selection_binding_enriches_selection_with_smart_setup():
+    page = FakePage()
+    context = FakeContext([page])
+    smart_setup = FakeSmartSetup()
+    controller = BrowserController(smart_setup=smart_setup)
+    controller.context = context
+
+    await controller._expose_bindings()
+    await context.bindings["openPulseSelectCandidate"]({"page": page}, {"initialValue": "$10", "semanticType": "price"})
+
+    assert smart_setup.calls
+    assert controller.latest_selection["sourceType"] == "network"
+    assert controller.latest_selection["smartSetup"]["status"] == "recipe_verified"
+
+
+async def test_extract_from_page_uses_network_recipe_without_dom_refind():
+    page = FakeNetworkRecipePage(
+        """
+        {
+          "data": {
+            "items": [
+              {"id": "new", "price": 5},
+              {"id": "target", "price": 12}
+            ]
+          }
+        }
+        """
+    )
+    target = {
+        "sourceType": "network",
+        "networkRecipe": {
+            "type": "network_json",
+            "request": {
+                "method": "POST",
+                "urlPath": "https://example.test/api/search",
+            },
+            "collectionPath": "$.data.items[*]",
+            "identity": {"id": "target"},
+            "valuePath": "$.price",
+        },
+        "selector": "#stale-dom-price",
+    }
+
+    result = await extract_from_page(page, "https://example.test/search", target, source="headless")
+
+    assert result.found is True
+    assert result.value == "12"
+    assert result.details["extractionStrategy"] == "network_recipe"
+    assert result.details["matchedIndex"] == 1
 
 
 def test_browser_controller_falls_back_when_tracked_page_closes():
