@@ -57,6 +57,8 @@ class Database:
             "checkStartedAt": payload.get("checkStartedAt"),
             "destinationIds": destination_ids,
             "agentInstructions": payload.get("agentInstructions") or "",
+            "triggerPolicy": _normalize_trigger_policy(payload.get("triggerPolicy")),
+            "triggeredAt": payload.get("triggeredAt"),
         }
         with self.connect() as conn:
             conn.execute(
@@ -66,9 +68,9 @@ class Database:
                     interval_seconds, enabled, created_at, last_checked_at,
                     next_check_at, last_status, last_error, last_duration_ms,
                     last_value, consecutive_failures, check_started_at,
-                    agent_instructions
+                    agent_instructions, trigger_policy, triggered_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     monitor["id"],
@@ -88,6 +90,8 @@ class Database:
                     monitor["consecutiveFailures"],
                     monitor["checkStartedAt"],
                     monitor["agentInstructions"],
+                    monitor["triggerPolicy"],
+                    monitor["triggeredAt"],
                 ),
             )
             self._set_monitor_destinations(conn, monitor["id"], destination_ids)
@@ -217,10 +221,17 @@ class Database:
         status = "pending" if enabled else "paused"
         error = None if enabled else "paused_by_user"
         next_check_at = utc_now()
+        trigger_policy = _normalize_trigger_policy(payload.get("triggerPolicy"))
         with self.connect() as conn:
-            existing = conn.execute("select id from monitors where id = ?", (monitor_id,)).fetchone()
+            existing = conn.execute(
+                "select condition_json, trigger_policy, triggered_at from monitors where id = ?",
+                (monitor_id,),
+            ).fetchone()
             if existing is None:
                 return None
+            condition_changed = json.loads(existing["condition_json"]) != payload["condition"]
+            trigger_policy_changed = existing["trigger_policy"] != trigger_policy
+            triggered_at = None if condition_changed or trigger_policy_changed else existing["triggered_at"]
             conn.execute(
                 """
                 update monitors
@@ -234,7 +245,9 @@ class Database:
                     last_status = ?,
                     last_error = ?,
                     check_started_at = null,
-                    agent_instructions = ?
+                    agent_instructions = ?,
+                    trigger_policy = ?,
+                    triggered_at = ?
                 where id = ?
                 """,
                 (
@@ -248,11 +261,20 @@ class Database:
                     status,
                     error,
                     payload.get("agentInstructions") or "",
+                    trigger_policy,
+                    triggered_at,
                     monitor_id,
                 ),
             )
             self._set_monitor_destinations(conn, monitor_id, destination_ids)
         return self.get_monitor(monitor_id)
+
+    def mark_monitor_triggered(self, monitor_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "update monitors set triggered_at = coalesce(triggered_at, ?) where id = ?",
+                (utc_now(), monitor_id),
+            )
 
     def set_monitor_enabled(self, monitor_id: str, enabled: bool) -> dict[str, Any] | None:
         status = "pending" if enabled else "paused"
@@ -576,6 +598,8 @@ class Database:
             "checkStartedAt": row["check_started_at"],
             "destinationIds": [],
             "agentInstructions": row["agent_instructions"],
+            "triggerPolicy": row["trigger_policy"],
+            "triggeredAt": row["triggered_at"],
         }
         return monitor
 
@@ -661,6 +685,10 @@ def _default_event_type(status: str, message: str, condition_matched: bool) -> s
     return "check_completed"
 
 
+def _normalize_trigger_policy(value: Any) -> str:
+    return value if value in {"every_match", "once"} else "every_match"
+
+
 def _default_severity(status: str, condition_matched: bool) -> str:
     if condition_matched or status == "matched":
         return "success"
@@ -728,6 +756,7 @@ def build_event_payload(log: dict[str, Any], monitor: dict[str, Any]) -> dict[st
                 "sourceType": (monitor.get("target") or {}).get("sourceType") or "website",
                 "condition": monitor["condition"],
                 "agentInstructions": monitor.get("agentInstructions") or "",
+                "triggerPolicy": monitor.get("triggerPolicy") or "every_match",
             },
             "event": {
                 "id": log["id"],

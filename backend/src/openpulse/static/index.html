@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OpenPulse</title>
-    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-13" />
+    <link rel="stylesheet" href="/static/styles.css?v=codex-shell-14" />
   </head>
   <body>
     <div class="appFrame">
@@ -169,6 +169,13 @@
                 <input id="intervalSeconds" type="number" min="5" value="300" />
               </label>
               <label>
+                Trigger
+                <select id="triggerPolicy">
+                  <option value="every_match">Every matching check</option>
+                  <option value="once">Only first match</option>
+                </select>
+              </label>
+              <label>
                 Agent instructions
                 <textarea
                   id="agentInstructions"
@@ -299,6 +306,6 @@
       </main>
     </div>
 
-    <script type="module" src="/static/app.js?v=codex-shell-13"></script>
+    <script type="module" src="/static/app.js?v=codex-shell-14"></script>
   </body>
 </html>

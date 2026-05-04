@@ -542,6 +542,7 @@ function renderMonitors() {
           <div class="itemMeta">Destinations: ${escapeHtml(destinationNames(monitor.destinationIds).join(", ") || "Log only")}</div>
           ${monitor.agentInstructions ? `<div class="itemMeta">Agent: ${escapeHtml(monitor.agentInstructions)}</div>` : ""}
           <div class="itemMeta">Condition: ${escapeHtml(JSON.stringify(monitor.condition))}</div>
+          <div class="itemMeta">Trigger: ${escapeHtml(triggerPolicyLabel(monitor.triggerPolicy))}</div>
           <div class="stateGrid">
             <div>
               <span>Last checked</span>
@@ -673,6 +674,12 @@ function renderMonitorEditForm(monitor) {
           Check interval seconds
           <input data-edit-interval type="number" min="5" value="${escapeHtml(monitor.intervalSeconds)}" />
         </label>
+        <label>
+          Trigger
+          <select data-edit-trigger-policy>
+            ${triggerPolicyOptionsHtml(monitor.triggerPolicy)}
+          </select>
+        </label>
         <label class="checkToggle">
           <input data-edit-enabled type="checkbox"${monitor.enabled ? " checked" : ""} />
           <span>Enabled</span>
@@ -737,13 +744,27 @@ function monitorUpdatePayloadFromForm(monitor, form) {
     intervalSeconds: Number(form.querySelector("[data-edit-interval]").value || 300),
     enabled: form.querySelector("[data-edit-enabled]").checked,
     destinationIds: Array.from(form.querySelectorAll("[data-edit-destination]:checked")).map((input) => input.value),
-    agentInstructions: form.querySelector("[data-edit-agent-instructions]").value.trim()
+    agentInstructions: form.querySelector("[data-edit-agent-instructions]").value.trim(),
+    triggerPolicy: form.querySelector("[data-edit-trigger-policy]").value
   };
 }
 
 function destinationNames(destinationIds = []) {
   const names = new Map(state.destinations.map((destination) => [destination.id, destination.name]));
   return destinationIds.map((id) => names.get(id) || id);
+}
+
+function triggerPolicyOptionsHtml(selectedPolicy = "every_match") {
+  return [
+    ["every_match", "Every matching check"],
+    ["once", "Only first match"]
+  ]
+    .map(([value, label]) => `<option value="${value}"${value === selectedPolicy ? " selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function triggerPolicyLabel(policy) {
+  return policy === "once" ? "Only first match" : "Every matching check";
 }
 
 function monitorSummary(monitor) {
@@ -925,6 +946,10 @@ function agentInstructionsFromForm() {
   return $("agentInstructions").value.trim();
 }
 
+function triggerPolicyFromForm() {
+  return $("triggerPolicy").value || "every_match";
+}
+
 function logDisplayValue(log) {
   return log.details?.display || log.currentValue || "-";
 }
@@ -1083,6 +1108,7 @@ async function saveWebsiteMonitor() {
       intervalSeconds: Number($("intervalSeconds").value || 300),
       destinationIds: selectedDestinationIds(),
       agentInstructions: agentInstructionsFromForm(),
+      triggerPolicy: triggerPolicyFromForm(),
       enabled: true
     })
   });
@@ -1124,6 +1150,7 @@ async function saveScriptMonitor() {
       intervalSeconds: Number($("intervalSeconds").value || 300),
       destinationIds: selectedDestinationIds(),
       agentInstructions: agentInstructionsFromForm(),
+      triggerPolicy: triggerPolicyFromForm(),
       enabled: true
     })
   });

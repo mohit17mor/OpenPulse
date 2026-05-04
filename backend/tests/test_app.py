@@ -147,6 +147,7 @@ def test_monitor_api_updates_saved_monitor_settings(tmp_path):
             "enabled": False,
             "destinationIds": [destination["id"]],
             "agentInstructions": "Decide whether this sale is worth opening.",
+            "triggerPolicy": "once",
         },
     )
     missing_response = client.put(
@@ -169,6 +170,7 @@ def test_monitor_api_updates_saved_monitor_settings(tmp_path):
     assert updated["lastStatus"] == "paused"
     assert updated["destinationIds"] == [destination["id"]]
     assert updated["agentInstructions"] == "Decide whether this sale is worth opening."
+    assert updated["triggerPolicy"] == "once"
     assert client.get("/api/monitors").json()[0]["name"] == "Sale mention"
     assert missing_response.status_code == 404
 

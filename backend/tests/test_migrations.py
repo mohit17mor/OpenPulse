@@ -20,6 +20,8 @@ def test_fresh_database_records_all_schema_migrations(tmp_path):
 
     assert versions == list(range(1, CURRENT_SCHEMA_VERSION + 1))
     assert "check_started_at" in monitor_columns
+    assert "trigger_policy" in monitor_columns
+    assert "triggered_at" in monitor_columns
     assert "event_type" in log_columns
     assert "evidence_json" in log_columns
 
@@ -111,6 +113,8 @@ def test_database_upgrades_original_schema_without_losing_rows(tmp_path):
     assert monitor["name"] == "Old price watch"
     assert monitor["lastStatus"] == "pending"
     assert monitor["checkStartedAt"] is None
+    assert monitor["triggerPolicy"] == "every_match"
+    assert monitor["triggeredAt"] is None
     assert log["message"] == "value_unchanged"
     assert log["eventType"] == "check_completed"
     assert log["severity"] == "info"

@@ -240,6 +240,55 @@ def test_database_updates_monitor_settings_without_dropping_history(tmp_path):
     assert db.update_monitor("missing", {"name": "Missing"}) is None
 
 
+def test_database_stores_trigger_policy_and_resets_when_condition_changes(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = db.create_monitor(
+        {
+            "name": "BTC threshold",
+            "url": "https://example.com/btc",
+            "target": {"initialValue": "$80,000"},
+            "condition": {"type": "greater_than", "value": 79900},
+            "intervalSeconds": 30,
+            "enabled": True,
+            "triggerPolicy": "once",
+        }
+    )
+
+    db.mark_monitor_triggered(monitor["id"])
+    triggered = db.get_monitor(monitor["id"])
+    unchanged = db.update_monitor(
+        monitor["id"],
+        {
+            "name": "BTC threshold",
+            "url": "https://example.com/btc",
+            "target": {"initialValue": "$80,000"},
+            "condition": {"type": "greater_than", "value": 79900},
+            "intervalSeconds": 60,
+            "enabled": True,
+            "triggerPolicy": "once",
+        },
+    )
+    reset = db.update_monitor(
+        monitor["id"],
+        {
+            "name": "BTC threshold",
+            "url": "https://example.com/btc",
+            "target": {"initialValue": "$80,000"},
+            "condition": {"type": "greater_than", "value": 80500},
+            "intervalSeconds": 60,
+            "enabled": True,
+            "triggerPolicy": "once",
+        },
+    )
+
+    assert monitor["triggerPolicy"] == "once"
+    assert monitor["triggeredAt"] is None
+    assert triggered["triggeredAt"] is not None
+    assert unchanged["triggeredAt"] == triggered["triggeredAt"]
+    assert reset["triggeredAt"] is None
+
+
 def test_database_records_monitor_lifecycle_state(tmp_path):
     db = Database(tmp_path / "openpulse.db")
     db.initialize()

@@ -308,6 +308,12 @@ class CheckEngine:
     def _enqueue_delivery_if_needed(self, log: dict[str, Any], monitor: dict[str, Any]) -> None:
         if log.get("status") != "matched" and not log.get("conditionMatched"):
             return
+        if monitor.get("triggerPolicy") == "once":
+            if monitor.get("triggeredAt"):
+                return
+            self.db.enqueue_deliveries_for_log(log, monitor)
+            self.db.mark_monitor_triggered(monitor["id"])
+            return
         self.db.enqueue_deliveries_for_log(log, monitor)
 
 

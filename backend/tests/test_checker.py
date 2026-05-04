@@ -94,6 +94,45 @@ async def test_check_engine_enqueues_delivery_for_matched_monitor_destination(tm
     assert deliveries[0]["payload"]["data"]["monitor"]["id"] == monitor["id"]
 
 
+async def test_check_engine_enqueues_once_for_one_shot_monitor(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    destination = db.create_destination(
+        {
+            "name": "Agent bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/events"},
+            "enabled": True,
+        }
+    )
+    monitor = db.create_monitor(
+        {
+            "name": "BTC threshold",
+            "url": "http://example.test/btc",
+            "target": {"semanticType": "price", "initialValue": "$80,000", "selector": "#price"},
+            "condition": {"type": "greater_than", "value": 79900},
+            "intervalSeconds": 300,
+            "enabled": True,
+            "destinationIds": [destination["id"]],
+            "triggerPolicy": "once",
+        }
+    )
+    engine = CheckEngine(db, FakeExtractor(ExtractedValue(found=True, value="$80,100", details={"selector": "#price"})))
+
+    first_result = await engine.run_check(monitor["id"])
+    second_result = await engine.run_check(monitor["id"])
+
+    logs = db.list_logs()
+    deliveries = db.list_pending_deliveries()
+    updated = db.get_monitor(monitor["id"])
+    assert first_result["status"] == "matched"
+    assert second_result["status"] == "matched"
+    assert len(logs) == 2
+    assert len(deliveries) == 1
+    assert deliveries[0]["payload"]["data"]["monitor"]["triggerPolicy"] == "once"
+    assert updated["triggeredAt"] is not None
+
+
 async def test_check_engine_logs_missing_target(tmp_path):
     db = Database(tmp_path / "openpulse.db")
     db.initialize()

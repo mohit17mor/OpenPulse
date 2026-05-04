@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,6 +38,7 @@ class MonitorRequest(BaseModel):
     enabled: bool = True
     destinationIds: list[str] = []
     agentInstructions: str = ""
+    triggerPolicy: Literal["every_match", "once"] = "every_match"
 
 
 class ScriptPreviewRequest(BaseModel):
@@ -178,6 +179,7 @@ def create_app(
                 "enabled": request.enabled,
                 "destinationIds": request.destinationIds,
                 "agentInstructions": request.agentInstructions,
+                "triggerPolicy": request.triggerPolicy,
             }
         )
         if target.get("sourceType") == "script" and target.get("selection", {}).get("mode") == "items":
@@ -203,6 +205,7 @@ def create_app(
                 "enabled": request.enabled,
                 "destinationIds": request.destinationIds,
                 "agentInstructions": request.agentInstructions,
+                "triggerPolicy": request.triggerPolicy,
             },
         )
         if monitor is None:

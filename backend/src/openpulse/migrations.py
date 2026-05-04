@@ -175,6 +175,11 @@ def _monitor_agent_instructions(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "monitors", "agent_instructions", "text not null default ''")
 
 
+def _monitor_trigger_policy(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(conn, "monitors", "trigger_policy", "text not null default 'every_match'")
+    _add_column_if_missing(conn, "monitors", "triggered_at", "text")
+
+
 MIGRATIONS: list[Migration] = [
     (1, "initial_schema", _initial_schema),
     (2, "script_seen_items", _script_seen_items),
@@ -183,6 +188,7 @@ MIGRATIONS: list[Migration] = [
     (5, "structured_event_logs", _structured_event_logs),
     (6, "event_destinations", _event_destinations),
     (7, "monitor_agent_instructions", _monitor_agent_instructions),
+    (8, "monitor_trigger_policy", _monitor_trigger_policy),
 ]
 
 CURRENT_SCHEMA_VERSION = MIGRATIONS[-1][0]
