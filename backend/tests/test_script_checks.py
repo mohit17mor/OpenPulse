@@ -49,10 +49,18 @@ async def test_script_scalar_changed_check_updates_baseline(tmp_path):
     assert updated["target"]["selection"]["initialValue"] == "90"
 
 
-async def test_script_items_baseline_then_detects_new_items(tmp_path):
+async def test_script_items_batches_new_items_by_default(tmp_path):
     script = create_script_file(tmp_path, '{"items": [{"id": "a", "title": "A"}]}')
     db = Database(tmp_path / "openpulse.db")
     db.initialize()
+    destination = db.create_destination(
+        {
+            "name": "Agent bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/events"},
+            "enabled": True,
+        }
+    )
     monitor = db.create_monitor(
         {
             "name": "RSS items",
@@ -76,24 +84,98 @@ async def test_script_items_baseline_then_detects_new_items(tmp_path):
             "condition": {"type": "new_item"},
             "intervalSeconds": 30,
             "enabled": True,
+            "destinationIds": [destination["id"]],
         }
     )
     db.add_script_seen_items(monitor["id"], [{"id": "a", "item": {"id": "a", "title": "A"}}])
-    script.write_text("print('{\"items\": [{\"id\": \"a\", \"title\": \"A\"}, {\"id\": \"b\", \"title\": \"B\"}]}')\n")
+    script.write_text(
+        "print('{\"items\": ["
+        "{\"id\": \"a\", \"title\": \"A\"}, "
+        "{\"id\": \"b\", \"title\": \"B\"}, "
+        "{\"id\": \"c\", \"title\": \"C\"}"
+        "]}')\n"
+    )
     engine = CheckEngine(db, extractor=None)
 
     result = await engine.run_check(monitor["id"])
 
     logs = db.list_logs()
+    deliveries = db.list_pending_deliveries()
     assert result["status"] == "matched"
-    assert logs[0]["message"] == "new_item_detected"
-    assert logs[0]["currentValue"] == "b"
-    assert logs[0]["eventType"] == "new_item_detected"
+    assert logs[0]["message"] == "new_items_detected"
+    assert logs[0]["currentValue"] == "2"
+    assert logs[0]["eventType"] == "new_items_detected"
     assert logs[0]["severity"] == "success"
     assert logs[0]["sourceType"] == "script"
-    assert logs[0]["title"] == "New item detected"
-    assert "B" in logs[0]["summary"]
-    assert db.list_script_seen_item_ids(monitor["id"]) == {"a", "b"}
+    assert logs[0]["title"] == "New items detected"
+    assert "2 new items" in logs[0]["summary"]
+    assert logs[0]["details"]["newItemCount"] == 2
+    assert [item["id"] for item in logs[0]["details"]["items"]] == ["b", "c"]
+    assert len(deliveries) == 1
+    assert deliveries[0]["payload"]["type"] == "openpulse.monitor.new_items_detected"
+    assert deliveries[0]["payload"]["data"]["items"][0]["display"] == "B"
+    assert db.list_script_seen_item_ids(monitor["id"]) == {"a", "b", "c"}
+
+
+async def test_script_items_can_deliver_per_item(tmp_path):
+    script = create_script_file(tmp_path, '{"items": [{"id": "a", "title": "A"}]}')
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    destination = db.create_destination(
+        {
+            "name": "Agent bridge",
+            "type": "webhook",
+            "config": {"url": "http://127.0.0.1:8765/events"},
+            "enabled": True,
+        }
+    )
+    monitor = db.create_monitor(
+        {
+            "name": "RSS items",
+            "url": "script://emit.py",
+            "target": {
+                "sourceType": "script",
+                "script": {
+                    "command": sys.executable,
+                    "args": [str(script)],
+                    "cwd": str(tmp_path),
+                    "timeoutSeconds": 5,
+                },
+                "selection": {
+                    "mode": "items",
+                    "outputType": "json",
+                    "arrayPath": "items",
+                    "idField": "id",
+                    "displayField": "title",
+                },
+            },
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 30,
+            "enabled": True,
+            "destinationIds": [destination["id"]],
+            "itemDeliveryMode": "per_item",
+        }
+    )
+    db.add_script_seen_items(monitor["id"], [{"id": "a", "item": {"id": "a", "title": "A"}}])
+    script.write_text(
+        "print('{\"items\": ["
+        "{\"id\": \"a\", \"title\": \"A\"}, "
+        "{\"id\": \"b\", \"title\": \"B\"}, "
+        "{\"id\": \"c\", \"title\": \"C\"}"
+        "]}')\n"
+    )
+    engine = CheckEngine(db, extractor=None)
+
+    result = await engine.run_check(monitor["id"])
+
+    logs = db.list_logs()
+    deliveries = db.list_pending_deliveries()
+    assert result["status"] == "matched"
+    assert len(logs) == 2
+    assert len(deliveries) == 2
+    assert {log["message"] for log in logs} == {"new_item_detected"}
+    assert {delivery["payload"]["type"] for delivery in deliveries} == {"openpulse.monitor.new_item_detected"}
+    assert db.list_script_seen_item_ids(monitor["id"]) == {"a", "b", "c"}
 
 
 async def test_script_items_without_new_items_logs_checked(tmp_path):

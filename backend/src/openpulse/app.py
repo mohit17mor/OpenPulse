@@ -39,6 +39,7 @@ class MonitorRequest(BaseModel):
     destinationIds: list[str] = []
     agentInstructions: str = ""
     triggerPolicy: Literal["every_match", "once"] = "every_match"
+    itemDeliveryMode: Literal["batch", "per_item"] = "batch"
 
 
 class ScriptPreviewRequest(BaseModel):
@@ -180,6 +181,7 @@ def create_app(
                 "destinationIds": request.destinationIds,
                 "agentInstructions": request.agentInstructions,
                 "triggerPolicy": request.triggerPolicy,
+                "itemDeliveryMode": request.itemDeliveryMode,
             }
         )
         if target.get("sourceType") == "script" and target.get("selection", {}).get("mode") == "items":
@@ -206,6 +208,7 @@ def create_app(
                 "destinationIds": request.destinationIds,
                 "agentInstructions": request.agentInstructions,
                 "triggerPolicy": request.triggerPolicy,
+                "itemDeliveryMode": request.itemDeliveryMode,
             },
         )
         if monitor is None:
@@ -270,6 +273,7 @@ def create_app(
     @app.post("/api/monitors/{monitor_id}/check")
     async def run_check(monitor_id: str) -> dict[str, Any]:
         try:
+            db.mark_check_started(monitor_id)
             return await check_engine.run_check(monitor_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

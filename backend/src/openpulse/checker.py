@@ -8,6 +8,8 @@ from openpulse.conditions import evaluate_condition
 from openpulse.scripts import ScriptOutputError, extract_items, extract_scalar, run_script_preview
 from openpulse.storage import Database
 
+MAX_BATCH_ITEMS = 25
+
 
 @dataclass(frozen=True)
 class ExtractedValue:
@@ -244,6 +246,47 @@ class CheckEngine:
             self._record_lifecycle(monitor["id"], "checked", str(len(items)), check_started, log["message"])
             return log
 
+        if monitor.get("itemDeliveryMode") != "per_item":
+            included_items = new_items[:MAX_BATCH_ITEMS]
+            event_items = [_event_item(item["item"], item["id"], selection) for item in included_items]
+            truncated = len(new_items) > len(included_items)
+            log = self.db.create_log(
+                {
+                    "monitorId": monitor["id"],
+                    "status": "matched",
+                    **_event_fields(
+                        source_type="script",
+                        status="matched",
+                        message="new_items_detected",
+                        previous_value=str(len(seen_ids)),
+                        current_value=str(len(new_items)),
+                        condition_matched=True,
+                        evidence={
+                            "items": event_items,
+                            "newItemCount": len(new_items),
+                            "includedItemCount": len(event_items),
+                            "truncated": truncated,
+                            "selection": selection,
+                        },
+                    ),
+                    "previousValue": str(len(seen_ids)),
+                    "currentValue": str(len(new_items)),
+                    "conditionMatched": True,
+                    "message": "new_items_detected",
+                    "details": {
+                        "items": event_items,
+                        "newItemCount": len(new_items),
+                        "includedItemCount": len(event_items),
+                        "truncated": truncated,
+                        "selection": selection,
+                    },
+                }
+            )
+            self._enqueue_delivery_if_needed(log, monitor)
+            self.db.add_script_seen_items(monitor["id"], new_items)
+            self._record_lifecycle(monitor["id"], "matched", str(len(new_items)), check_started, "new_items_detected")
+            return log
+
         logs = []
         for item in new_items:
             log = self.db.create_log(
@@ -313,6 +356,7 @@ class CheckEngine:
                 return
             self.db.enqueue_deliveries_for_log(log, monitor)
             self.db.mark_monitor_triggered(monitor["id"])
+            monitor["triggeredAt"] = monitor.get("triggeredAt") or "marked"
             return
         self.db.enqueue_deliveries_for_log(log, monitor)
 
@@ -328,6 +372,15 @@ def _item_display(item: dict[str, Any], selection: dict[str, Any]) -> str:
     if value is None:
         value = _item_field(item, selection.get("idField"))
     return str(value)
+
+
+def _event_item(item: dict[str, Any], item_id: str, selection: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": item_id,
+        "display": _item_display(item, selection),
+        "url": _item_field(item, selection.get("urlField")),
+        "item": item,
+    }
 
 
 def _event_fields(
@@ -362,6 +415,8 @@ def _event_fields(
 
 
 def _event_type(source_type: str, status: str, message: str, condition_matched: bool) -> str:
+    if message == "new_items_detected":
+        return "new_items_detected"
     if message == "new_item_detected":
         return "new_item_detected"
     if source_type == "script" and status == "error":
@@ -399,6 +454,7 @@ def _title(event_type: str) -> str:
         "script_output_missing": "Script output missing",
         "website_navigation_failed": "Website navigation failed",
         "new_item_detected": "New item detected",
+        "new_items_detected": "New items detected",
         "check_completed": "Check completed",
     }
     return titles.get(event_type, "Check event")
@@ -422,6 +478,8 @@ def _event_summary(
         return "OpenPulse could not load the website for this check."
     if event_type == "new_item_detected":
         return f"New item detected: {display or current_value or '-'}."
+    if event_type == "new_items_detected":
+        return f"{current_value or '-'} new items detected."
     if event_type == "script_output_missing":
         return "The script ran, but the selected output was not found."
     if event_type in {"script_failed", "script_timeout"}:

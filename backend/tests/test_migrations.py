@@ -22,6 +22,7 @@ def test_fresh_database_records_all_schema_migrations(tmp_path):
     assert "check_started_at" in monitor_columns
     assert "trigger_policy" in monitor_columns
     assert "triggered_at" in monitor_columns
+    assert "item_delivery_mode" in monitor_columns
     assert "event_type" in log_columns
     assert "evidence_json" in log_columns
 
@@ -115,6 +116,7 @@ def test_database_upgrades_original_schema_without_losing_rows(tmp_path):
     assert monitor["checkStartedAt"] is None
     assert monitor["triggerPolicy"] == "every_match"
     assert monitor["triggeredAt"] is None
+    assert monitor["itemDeliveryMode"] == "batch"
     assert log["message"] == "value_unchanged"
     assert log["eventType"] == "check_completed"
     assert log["severity"] == "info"

@@ -154,6 +154,8 @@ Supported output:
 
 For item-list monitors, choose a stable ID field such as `guid`, `id`, or Jira `key`. OpenPulse stores the preview items as the baseline and only logs new IDs seen in later runs.
 
+Item-list monitors default to batch delivery. If 10 new feed items appear, OpenPulse sends one event containing all 10 items. You can switch a monitor to per-item delivery when each new item should wake its own agent run, such as one investigation per Jira ticket.
+
 Example scripts:
 
 ```bash
@@ -196,6 +198,8 @@ The default. If the condition matches every check, OpenPulse sends a delivery ev
 OpenPulse sends the first matched delivery and then suppresses future deliveries while the same rule stays armed. Checks and logs continue, but agents are not woken repeatedly.
 
 Changing the condition or trigger policy resets the one-shot state. Changing the schedule does not.
+
+For item-list monitors, keep `Every matching check` and use `One event with all new items` when you want a single agent call to summarize a feed batch.
 
 This is useful for threshold-style monitors such as:
 

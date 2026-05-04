@@ -59,6 +59,7 @@ class Database:
             "agentInstructions": payload.get("agentInstructions") or "",
             "triggerPolicy": _normalize_trigger_policy(payload.get("triggerPolicy")),
             "triggeredAt": payload.get("triggeredAt"),
+            "itemDeliveryMode": _normalize_item_delivery_mode(payload.get("itemDeliveryMode")),
         }
         with self.connect() as conn:
             conn.execute(
@@ -68,9 +69,10 @@ class Database:
                     interval_seconds, enabled, created_at, last_checked_at,
                     next_check_at, last_status, last_error, last_duration_ms,
                     last_value, consecutive_failures, check_started_at,
-                    agent_instructions, trigger_policy, triggered_at
+                    agent_instructions, trigger_policy, triggered_at,
+                    item_delivery_mode
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     monitor["id"],
@@ -92,6 +94,7 @@ class Database:
                     monitor["agentInstructions"],
                     monitor["triggerPolicy"],
                     monitor["triggeredAt"],
+                    monitor["itemDeliveryMode"],
                 ),
             )
             self._set_monitor_destinations(conn, monitor["id"], destination_ids)
@@ -222,6 +225,7 @@ class Database:
         error = None if enabled else "paused_by_user"
         next_check_at = utc_now()
         trigger_policy = _normalize_trigger_policy(payload.get("triggerPolicy"))
+        item_delivery_mode = _normalize_item_delivery_mode(payload.get("itemDeliveryMode"))
         with self.connect() as conn:
             existing = conn.execute(
                 "select condition_json, trigger_policy, triggered_at from monitors where id = ?",
@@ -247,7 +251,8 @@ class Database:
                     check_started_at = null,
                     agent_instructions = ?,
                     trigger_policy = ?,
-                    triggered_at = ?
+                    triggered_at = ?,
+                    item_delivery_mode = ?
                 where id = ?
                 """,
                 (
@@ -263,6 +268,7 @@ class Database:
                     payload.get("agentInstructions") or "",
                     trigger_policy,
                     triggered_at,
+                    item_delivery_mode,
                     monitor_id,
                 ),
             )
@@ -600,6 +606,7 @@ class Database:
             "agentInstructions": row["agent_instructions"],
             "triggerPolicy": row["trigger_policy"],
             "triggeredAt": row["triggered_at"],
+            "itemDeliveryMode": row["item_delivery_mode"],
         }
         return monitor
 
@@ -674,6 +681,10 @@ class Database:
 
 
 def _default_event_type(status: str, message: str, condition_matched: bool) -> str:
+    if message == "new_items_detected":
+        return "new_items_detected"
+    if message == "new_item_detected":
+        return "new_item_detected"
     if condition_matched or status == "matched":
         return "condition_matched"
     if status == "missing":
@@ -687,6 +698,10 @@ def _default_event_type(status: str, message: str, condition_matched: bool) -> s
 
 def _normalize_trigger_policy(value: Any) -> str:
     return value if value in {"every_match", "once"} else "every_match"
+
+
+def _normalize_item_delivery_mode(value: Any) -> str:
+    return value if value in {"batch", "per_item"} else "batch"
 
 
 def _default_severity(status: str, condition_matched: bool) -> str:
@@ -710,6 +725,7 @@ def _default_title(event_type: str, status: str) -> str:
         "scheduler_error": "Scheduled check failed",
         "check_failed": "Check failed",
         "check_completed": "Check completed",
+        "new_items_detected": "New items detected",
     }
     return titles.get(event_type, status.replace("_", " ").title())
 
@@ -729,6 +745,8 @@ def _default_summary(
         return "The website showed a security or verification page."
     if event_type == "new_item_detected":
         return f"New item detected: {current_value or '-'}."
+    if event_type == "new_items_detected":
+        return f"{current_value or '-'} new items detected."
     if event_type in {"script_failed", "script_timeout", "scheduler_error", "check_failed"}:
         return f"Check failed with reason: {message}."
     return f"Check completed. Current value: {current_value or '-'}."
@@ -740,7 +758,7 @@ def build_event_payload(log: dict[str, Any], monitor: dict[str, Any]) -> dict[st
         log["message"],
         bool(log.get("conditionMatched")),
     )
-    return {
+    payload = {
         "specversion": "1.0",
         "id": log["id"],
         "source": f"openpulse://monitor/{monitor['id']}",
@@ -757,6 +775,7 @@ def build_event_payload(log: dict[str, Any], monitor: dict[str, Any]) -> dict[st
                 "condition": monitor["condition"],
                 "agentInstructions": monitor.get("agentInstructions") or "",
                 "triggerPolicy": monitor.get("triggerPolicy") or "every_match",
+                "itemDeliveryMode": monitor.get("itemDeliveryMode") or "batch",
             },
             "event": {
                 "id": log["id"],
@@ -774,3 +793,9 @@ def build_event_payload(log: dict[str, Any], monitor: dict[str, Any]) -> dict[st
             "evidence": log.get("evidence") or log.get("details") or {},
         },
     }
+    evidence = payload["data"]["evidence"]
+    if isinstance(evidence, dict) and "items" in evidence:
+        payload["data"]["items"] = evidence["items"]
+        payload["data"]["newItemCount"] = evidence.get("newItemCount")
+        payload["data"]["truncated"] = bool(evidence.get("truncated", False))
+    return payload

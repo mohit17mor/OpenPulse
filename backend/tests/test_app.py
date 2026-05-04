@@ -8,10 +8,23 @@ from threading import Thread
 import openpulse.app as app_module
 from openpulse.app import create_app
 from openpulse.checker import ExtractedValue
+from openpulse.storage import Database
 
 
 class FakeExtractor:
     async def extract(self, url, target):
+        return ExtractedValue(found=True, value="$89.00", details={"selector": target["selector"]})
+
+
+class InspectingExtractor:
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.saw_checking_state = False
+
+    async def extract(self, url, target):
+        db = Database(self.db_path)
+        monitor = db.get_monitor(target["monitorId"])
+        self.saw_checking_state = monitor["lastStatus"] == "checking" and monitor["checkStartedAt"] is not None
         return ExtractedValue(found=True, value="$89.00", details={"selector": target["selector"]})
 
 
@@ -46,6 +59,47 @@ def test_monitor_api_saves_and_checks_monitor(tmp_path):
     assert check_response.status_code == 200
     assert check_response.json()["status"] == "matched"
     assert logs_response.json()[0]["currentValue"] == "$89.00"
+
+
+def test_manual_monitor_check_marks_monitor_checking_before_extracting(tmp_path):
+    db_path = tmp_path / "openpulse.db"
+    extractor = InspectingExtractor(db_path)
+    app = create_app(db_path=db_path, extractor=extractor, start_scheduler=False)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/monitors",
+        json={
+            "name": "Price drop",
+            "url": "http://example.test/product",
+            "target": {
+                "semanticType": "price",
+                "initialValue": "$129.00",
+                "selector": "#price",
+                "monitorId": "placeholder",
+            },
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 300,
+        },
+    )
+    monitor_id = response.json()["id"]
+    target = response.json()["target"]
+    target["monitorId"] = monitor_id
+    client.put(
+        f"/api/monitors/{monitor_id}",
+        json={
+            "name": "Price drop",
+            "url": "http://example.test/product",
+            "target": target,
+            "condition": {"type": "less_than", "value": 100},
+            "intervalSeconds": 300,
+        },
+    )
+
+    check_response = client.post(f"/api/monitors/{monitor_id}/check")
+
+    assert check_response.status_code == 200
+    assert extractor.saw_checking_state is True
 
 
 def test_workspace_api_returns_runtime_paths(tmp_path):

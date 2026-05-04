@@ -284,9 +284,43 @@ def test_database_stores_trigger_policy_and_resets_when_condition_changes(tmp_pa
 
     assert monitor["triggerPolicy"] == "once"
     assert monitor["triggeredAt"] is None
+    assert monitor["itemDeliveryMode"] == "batch"
     assert triggered["triggeredAt"] is not None
     assert unchanged["triggeredAt"] == triggered["triggeredAt"]
     assert reset["triggeredAt"] is None
+
+
+def test_database_stores_item_delivery_mode(tmp_path):
+    db = Database(tmp_path / "openpulse.db")
+    db.initialize()
+    monitor = db.create_monitor(
+        {
+            "name": "Feed",
+            "url": "script://feed.py",
+            "target": {"sourceType": "script"},
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 30,
+            "enabled": True,
+            "itemDeliveryMode": "per_item",
+        }
+    )
+
+    updated = db.update_monitor(
+        monitor["id"],
+        {
+            "name": "Feed",
+            "url": "script://feed.py",
+            "target": {"sourceType": "script"},
+            "condition": {"type": "new_item"},
+            "intervalSeconds": 30,
+            "enabled": True,
+            "triggerPolicy": "every_match",
+            "itemDeliveryMode": "batch",
+        },
+    )
+
+    assert monitor["itemDeliveryMode"] == "per_item"
+    assert updated["itemDeliveryMode"] == "batch"
 
 
 def test_database_records_monitor_lifecycle_state(tmp_path):

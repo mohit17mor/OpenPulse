@@ -142,6 +142,7 @@ function updateConditionOptions() {
   if (state.source === "script" && state.scriptSelection?.mode === "items") {
     select.innerHTML = '<option value="new_item">new item appears</option>';
     $("conditionValueRow").style.display = "none";
+    updateItemDeliveryModeVisibility();
     return;
   }
   const numeric = state.source === "website"
@@ -162,6 +163,7 @@ function updateConditionOptions() {
       <option value="disappears">disappears</option>
     `;
   updateConditionValueVisibility();
+  updateItemDeliveryModeVisibility();
 }
 
 function updateConditionValueVisibility() {
@@ -182,6 +184,7 @@ function renderSelection() {
         : "Run a script preview to see the full output here.";
     }
     renderScriptOutputPicker();
+    updateItemDeliveryModeVisibility();
     return;
   }
   $("selectionPreview").textContent = state.selection
@@ -311,6 +314,7 @@ function selectScriptNode(index) {
     $("monitorName").value = `${node.path} watch`;
   }
   updateConditionOptions();
+  updateItemDeliveryModeVisibility();
   renderSelection();
 }
 
@@ -508,6 +512,13 @@ function applyCondition(condition) {
   if (option) select.value = condition.type;
   $("conditionValue").value = condition.value === undefined || condition.value === null ? "" : String(condition.value);
   updateConditionValueVisibility();
+  updateItemDeliveryModeVisibility();
+}
+
+function updateItemDeliveryModeVisibility() {
+  const row = $("itemDeliveryModeRow");
+  if (!row) return;
+  row.classList.toggle("hidden", !(state.source === "script" && state.scriptSelection?.mode === "items"));
 }
 
 function renderMonitors() {
@@ -543,6 +554,7 @@ function renderMonitors() {
           ${monitor.agentInstructions ? `<div class="itemMeta">Agent: ${escapeHtml(monitor.agentInstructions)}</div>` : ""}
           <div class="itemMeta">Condition: ${escapeHtml(JSON.stringify(monitor.condition))}</div>
           <div class="itemMeta">Trigger: ${escapeHtml(triggerPolicyLabel(monitor.triggerPolicy))}</div>
+          ${isScriptItemMonitor(monitor) ? `<div class="itemMeta">New items: ${escapeHtml(itemDeliveryModeLabel(monitor.itemDeliveryMode))}</div>` : ""}
           <div class="stateGrid">
             <div>
               <span>Last checked</span>
@@ -610,6 +622,13 @@ function renderMonitors() {
 
   container.querySelectorAll("[data-run-check]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const monitor = state.monitors.find((item) => item.id === button.dataset.runCheck);
+      if (monitor) {
+        monitor.lastStatus = "checking";
+        monitor.lastError = null;
+        monitor.checkStartedAt = new Date().toISOString();
+        renderMonitors();
+      }
       await api(`/api/monitors/${button.dataset.runCheck}/check`, { method: "POST" });
       await refreshLogs();
       await refreshMonitors();
@@ -641,8 +660,18 @@ function renderMonitors() {
 function renderMonitorEditForm(monitor) {
   const condition = monitor.condition || { type: "changed" };
   const conditionValue = condition.value === undefined || condition.value === null ? "" : String(condition.value);
-  const isScriptItemMonitor = monitor.target?.sourceType === "script" && monitor.target?.selection?.mode === "items";
-  const conditionControl = isScriptItemMonitor
+  const scriptItemMonitor = isScriptItemMonitor(monitor);
+  const itemDeliveryControl = scriptItemMonitor
+    ? `
+        <label>
+          New item delivery
+          <select data-edit-item-delivery-mode>
+            ${itemDeliveryModeOptionsHtml(monitor.itemDeliveryMode)}
+          </select>
+        </label>
+      `
+    : `<input type="hidden" data-edit-item-delivery-mode value="${escapeHtml(monitor.itemDeliveryMode || "batch")}" />`;
+  const conditionControl = scriptItemMonitor
     ? `
       <label>
         Condition
@@ -680,6 +709,7 @@ function renderMonitorEditForm(monitor) {
             ${triggerPolicyOptionsHtml(monitor.triggerPolicy)}
           </select>
         </label>
+        ${itemDeliveryControl}
         <label class="checkToggle">
           <input data-edit-enabled type="checkbox"${monitor.enabled ? " checked" : ""} />
           <span>Enabled</span>
@@ -745,7 +775,8 @@ function monitorUpdatePayloadFromForm(monitor, form) {
     enabled: form.querySelector("[data-edit-enabled]").checked,
     destinationIds: Array.from(form.querySelectorAll("[data-edit-destination]:checked")).map((input) => input.value),
     agentInstructions: form.querySelector("[data-edit-agent-instructions]").value.trim(),
-    triggerPolicy: form.querySelector("[data-edit-trigger-policy]").value
+    triggerPolicy: form.querySelector("[data-edit-trigger-policy]").value,
+    itemDeliveryMode: form.querySelector("[data-edit-item-delivery-mode]").value
   };
 }
 
@@ -765,6 +796,23 @@ function triggerPolicyOptionsHtml(selectedPolicy = "every_match") {
 
 function triggerPolicyLabel(policy) {
   return policy === "once" ? "Only first match" : "Every matching check";
+}
+
+function itemDeliveryModeOptionsHtml(selectedMode = "batch") {
+  return [
+    ["batch", "One event with all new items"],
+    ["per_item", "One event per new item"]
+  ]
+    .map(([value, label]) => `<option value="${value}"${value === selectedMode ? " selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function itemDeliveryModeLabel(mode) {
+  return mode === "per_item" ? "One event per new item" : "One event with all new items";
+}
+
+function isScriptItemMonitor(monitor) {
+  return monitor.target?.sourceType === "script" && monitor.target?.selection?.mode === "items";
 }
 
 function monitorSummary(monitor) {
@@ -950,6 +998,10 @@ function triggerPolicyFromForm() {
   return $("triggerPolicy").value || "every_match";
 }
 
+function itemDeliveryModeFromForm() {
+  return state.source === "script" && state.scriptSelection?.mode === "items" ? $("itemDeliveryMode").value || "batch" : "batch";
+}
+
 function logDisplayValue(log) {
   return log.details?.display || log.currentValue || "-";
 }
@@ -1109,6 +1161,7 @@ async function saveWebsiteMonitor() {
       destinationIds: selectedDestinationIds(),
       agentInstructions: agentInstructionsFromForm(),
       triggerPolicy: triggerPolicyFromForm(),
+      itemDeliveryMode: itemDeliveryModeFromForm(),
       enabled: true
     })
   });
@@ -1151,6 +1204,7 @@ async function saveScriptMonitor() {
       destinationIds: selectedDestinationIds(),
       agentInstructions: agentInstructionsFromForm(),
       triggerPolicy: triggerPolicyFromForm(),
+      itemDeliveryMode: itemDeliveryModeFromForm(),
       enabled: true
     })
   });

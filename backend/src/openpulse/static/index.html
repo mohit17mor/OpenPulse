@@ -175,6 +175,13 @@
                   <option value="once">Only first match</option>
                 </select>
               </label>
+              <label id="itemDeliveryModeRow" class="hidden">
+                New item delivery
+                <select id="itemDeliveryMode">
+                  <option value="batch">One event with all new items</option>
+                  <option value="per_item">One event per new item</option>
+                </select>
+              </label>
               <label>
                 Agent instructions
                 <textarea
@@ -306,6 +313,6 @@
       </main>
     </div>
 
-    <script type="module" src="/static/app.js?v=codex-shell-14"></script>
+    <script type="module" src="/static/app.js?v=codex-shell-15"></script>
   </body>
 </html>

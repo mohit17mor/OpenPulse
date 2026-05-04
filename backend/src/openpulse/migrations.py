@@ -180,6 +180,10 @@ def _monitor_trigger_policy(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "monitors", "triggered_at", "text")
 
 
+def _monitor_item_delivery_mode(conn: sqlite3.Connection) -> None:
+    _add_column_if_missing(conn, "monitors", "item_delivery_mode", "text not null default 'batch'")
+
+
 MIGRATIONS: list[Migration] = [
     (1, "initial_schema", _initial_schema),
     (2, "script_seen_items", _script_seen_items),
@@ -189,6 +193,7 @@ MIGRATIONS: list[Migration] = [
     (6, "event_destinations", _event_destinations),
     (7, "monitor_agent_instructions", _monitor_agent_instructions),
     (8, "monitor_trigger_policy", _monitor_trigger_policy),
+    (9, "monitor_item_delivery_mode", _monitor_item_delivery_mode),
 ]
 
 CURRENT_SCHEMA_VERSION = MIGRATIONS[-1][0]
