@@ -1,25 +1,31 @@
 # OpenPulse
 
-OpenPulse is a local-first monitor for websites, scripts, feeds, and anything else you can turn into browser state or command output.
+OpenPulse makes the external world subscribable by AI.
 
-It is built for the annoying gap between simple cron jobs and expensive always-on AI agents: you set up a monitor once, OpenPulse checks it deterministically, and agents are only woken when something actually matters.
+Today, software can subscribe to APIs, webhooks, message queues, database changes, and app events. But most of the world people actually check every day does not emit clean events. Websites, portals, dashboards, feeds, PDFs, scripts, and local tools often expose information only as human-visible surfaces.
+
+OpenPulse turns those surfaces into semantic events. If a human can check it, an AI system should be able to subscribe to it.
+
+The goal is not another "page changed" alert tool. OpenPulse is a local-first semantic event layer for websites and other no-API surfaces. You set up a monitor once, OpenPulse checks the underlying fact cheaply, and agents are only woken when something actually matters.
 
 ## What It Does
 
-- Opens a managed Chromium browser so you can select page content visually.
-- Captures DOM context and recent network responses during setup.
-- Uses an optional one-time Google AI Studio setup step to choose a stable monitoring recipe for complex pages.
+- Opens a managed Chromium browser so you can select facts from pages visually.
+- Captures DOM context, nearby entity identity, and recent network responses during setup.
+- Compiles selections into deterministic monitoring recipes where possible.
 - Runs saved monitors on a local scheduler.
 - Runs local script monitors from plain text, JSON scalar values, or JSON item lists.
 - Sends matched events to webhooks, local commands, or agent bridges such as Codex and Claude.
 - Supports one-shot triggers so threshold monitors do not wake agents on every matching check.
 - Keeps logs and delivery history in a local SQLite database.
 
-OpenPulse does not keep an LLM in the polling loop. The intended shape is: use intelligence while setting up the monitor if it helps, then monitor cheaply with deterministic checks.
+OpenPulse does not keep an LLM in the polling loop. The intended shape is: use intelligence during setup if it helps identify the right signal, then monitor cheaply with deterministic checks.
 
 ## Why This Exists
 
-People often ask AI agents to keep checking things:
+Agents are still mostly reactive because the world around them is not evented.
+
+People ask AI agents to keep checking things:
 
 - "Tell me when this price crosses a threshold."
 - "Watch this website and tell me if this text changes."
@@ -27,7 +33,15 @@ People often ask AI agents to keep checking things:
 - "Run this script and alert me if the number is too high."
 - "Wake Codex when this local condition becomes true."
 
-That burns tokens and keeps the agent doing boring polling work. OpenPulse does the boring part locally and wakes the agent only when a saved rule matches.
+That burns tokens and keeps the agent doing boring polling work. OpenPulse moves sensing out of the agent and into a cheap local runtime. The agent receives a structured event only when a saved rule matches.
+
+In other words:
+
+```text
+No-API surface -> OpenPulse monitor -> semantic event -> agent action
+```
+
+OpenPulse is the missing sensing layer between messy human-facing software and proactive AI systems.
 
 ## Current Status
 
@@ -37,7 +51,7 @@ This is an early local-first MVP. It is useful, but intentionally small:
 - No browser extension.
 - No user accounts.
 - No CAPTCHA bypassing.
-- No promise that every complex website can be monitored reliably.
+- No promise that every complex website can be monitored reliably yet.
 
 For protected pages, OpenPulse works best when the managed browser session is already logged in or already past any interactive checks.
 
@@ -132,9 +146,16 @@ http://127.0.0.1:8000/fixtures/product_changed.html
 
 ## Website Monitors
 
-Website monitors start from a visual selection. OpenPulse stores the selected target and enough surrounding context to re-check it later.
+Website monitors start from a visual selection, but the product goal is not to monitor a fragile rectangle or selector. The goal is to monitor the fact behind what the user selected.
 
-For straightforward pages, the DOM path and selector are usually enough. For dynamic pages where list order or rendered DOM changes often, OpenPulse can use recent network responses captured during setup to build a more stable recipe.
+For straightforward pages, the DOM path and selector may be enough. For dynamic pages where list order or rendered DOM changes often, OpenPulse can use surrounding entity identity and recent network responses captured during setup to build a more stable recipe.
+
+When possible, OpenPulse prefers a stronger signal than raw DOM position:
+
+- A stable value inside a network response.
+- The same entity inside a repeated list or result set.
+- A labeled fact on the page.
+- A fallback visual/DOM target when no better signal is available.
 
 Checks prefer the already-launched browser session when one is available. This helps with pages that behave differently in a fresh headless browser. If no managed browser is open, checks fall back to a separate headless browser.
 
@@ -173,7 +194,7 @@ The LLM is not used for every check. Saved network monitors use deterministic re
 
 ## Script Monitors
 
-Script monitors let OpenPulse watch anything you can print to stdout.
+Script monitors turn local commands into semantic events. They are the escape hatch for sources that already have a good local way to fetch data: APIs, CLIs, databases, RSS feeds, internal tools, shell commands, and custom scripts.
 
 Flow:
 
@@ -247,7 +268,7 @@ This is useful for threshold-style monitors such as:
 
 ## Agent Destinations
 
-OpenPulse can send matched events to destinations. A monitor can route to zero, one, or many destinations.
+OpenPulse can send matched events to destinations. A monitor can route to zero, one, or many destinations, which lets different agents subscribe to different parts of the external world.
 
 Supported destination types:
 
@@ -317,21 +338,6 @@ Example agent instruction on a monitor:
 ```text
 Summarize the matched event and tell me whether it needs action.
 ```
-
-## Interesting Things To Monitor
-
-OpenPulse is not limited to websites. Good demos are things people currently waste agent tokens polling:
-
-- A crypto or stock page crossing a threshold.
-- A flight or bus price becoming cheap enough.
-- A product changing from sold out to available.
-- A WhatsApp Web or internal dashboard text changing in an already-open browser session.
-- New items in an RSS feed or Hacker News search.
-- Disk usage, CPU usage, or process count crossing a threshold.
-- A local build artifact, folder size, or generated report changing.
-- A script that checks an API and prints JSON.
-
-The sweet spot: a cheap deterministic check plus a one-time agent wakeup only when the check matters.
 
 ## Data And Privacy
 
